@@ -62,12 +62,12 @@ class DepartmentControllerTest {
     // ───────────────────── test data builders ─────────────────────
 
     private DepartmentDto buildDepartmentDto(Long id, String name, String description, Integer count) {
-        return DepartmentDto.builder()
-                .id(id)
-                .name(name)
-                .description(description)
-                .employeeCount(count)
-                .build();
+        DepartmentDto dto = new DepartmentDto();
+        dto.setId(id);
+        dto.setName(name);
+        dto.setDescription(description);
+        dto.setEmployeeCount(count);
+        return dto;
     }
 
     private DepartmentDto buildDefaultDepartment() {

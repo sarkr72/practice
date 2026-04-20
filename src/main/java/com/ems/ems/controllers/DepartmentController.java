@@ -18,48 +18,48 @@ import com.ems.ems.dtos.DepartmentDto;
 import com.ems.ems.services.DepartmentService;
 
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/departments")
-@RequiredArgsConstructor
 public class DepartmentController {
 
     private final DepartmentService departmentService;
 
+    public DepartmentController(DepartmentService departmentService) {
+        this.departmentService = departmentService;
+    }
+
     @PostMapping
     public ResponseEntity<ApiResponse<DepartmentDto>> createDepartment(
-            @Valid @RequestBody DepartmentDto departmentDto) {
-        DepartmentDto created = departmentService.createDepartment(departmentDto);
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(ApiResponse.ok("Department created successfully", created));
+            @Valid @RequestBody DepartmentDto request) {
+        DepartmentDto created = departmentService.createDepartment(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Department created successfully", created));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<DepartmentDto>> getDepartment(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<DepartmentDto>> getDepartmentById(@PathVariable Long id) {
         DepartmentDto department = departmentService.getDepartmentById(id);
-        return ResponseEntity.ok(ApiResponse.ok(department));
+        return ResponseEntity.ok(ApiResponse.success("Department retrieved successfully", department));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<DepartmentDto>>> getAllDepartments() {
         List<DepartmentDto> departments = departmentService.getAllDepartments();
-        return ResponseEntity.ok(ApiResponse.ok(departments));
+        return ResponseEntity.ok(ApiResponse.success("Departments retrieved successfully", departments));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<DepartmentDto>> updateDepartment(
             @PathVariable Long id,
-            @Valid @RequestBody DepartmentDto departmentDto) {
-        DepartmentDto updated = departmentService.updateDepartment(id, departmentDto);
-        return ResponseEntity.ok(ApiResponse.ok("Department updated successfully", updated));
+            @Valid @RequestBody DepartmentDto request) {
+        DepartmentDto updated = departmentService.updateDepartment(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Department updated successfully", updated));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteDepartment(@PathVariable Long id) {
         departmentService.deleteDepartment(id);
-        return ResponseEntity.ok(ApiResponse.ok("Department deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Department deleted successfully"));
     }
-
 }

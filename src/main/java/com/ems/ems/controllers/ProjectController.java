@@ -18,70 +18,71 @@ import com.ems.ems.dtos.ProjectDto;
 import com.ems.ems.services.ProjectService;
 
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/projects")
-@RequiredArgsConstructor
 public class ProjectController {
 
     private final ProjectService projectService;
 
+    public ProjectController(ProjectService projectService) {
+        this.projectService = projectService;
+    }
+
     @PostMapping
     public ResponseEntity<ApiResponse<ProjectDto>> createProject(
-            @Valid @RequestBody ProjectDto projectDto) {
-        ProjectDto created = projectService.createProject(projectDto);
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(ApiResponse.ok("Project created successfully", created));
+            @Valid @RequestBody ProjectDto request) {
+        ProjectDto created = projectService.createProject(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Project created successfully", created));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<ProjectDto>> getProject(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<ProjectDto>> getProjectById(@PathVariable Long id) {
         ProjectDto project = projectService.getProjectById(id);
-        return ResponseEntity.ok(ApiResponse.ok(project));
+        return ResponseEntity.ok(ApiResponse.success("Project retrieved successfully", project));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<ProjectDto>>> getAllProjects() {
         List<ProjectDto> projects = projectService.getAllProjects();
-        return ResponseEntity.ok(ApiResponse.ok(projects));
+        return ResponseEntity.ok(ApiResponse.success("Projects retrieved successfully", projects));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<ProjectDto>> updateProject(
             @PathVariable Long id,
-            @Valid @RequestBody ProjectDto projectDto) {
-        ProjectDto updated = projectService.updateProject(id, projectDto);
-        return ResponseEntity.ok(ApiResponse.ok("Project updated successfully", updated));
+            @Valid @RequestBody ProjectDto request) {
+        ProjectDto updated = projectService.updateProject(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Project updated successfully", updated));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteProject(@PathVariable Long id) {
         projectService.deleteProject(id);
-        return ResponseEntity.ok(ApiResponse.ok("Project deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Project deleted successfully"));
     }
 
     @PostMapping("/{projectId}/employees/{employeeId}")
-    public ResponseEntity<ApiResponse<ProjectDto>> addEmployee(
+    public ResponseEntity<ApiResponse<ProjectDto>> addEmployeeToProject(
             @PathVariable Long projectId,
             @PathVariable Long employeeId) {
-        ProjectDto updated = projectService.addEmployeeToProject(projectId, employeeId);
-        return ResponseEntity.ok(ApiResponse.ok("Employee added to project successfully", updated));
+        ProjectDto project = projectService.addEmployeeToProject(projectId, employeeId);
+        return ResponseEntity.ok(ApiResponse.success("Employee added to project successfully", project));
     }
 
     @DeleteMapping("/{projectId}/employees/{employeeId}")
-    public ResponseEntity<ApiResponse<ProjectDto>> removeEmployee(
+    public ResponseEntity<ApiResponse<ProjectDto>> removeEmployeeFromProject(
             @PathVariable Long projectId,
             @PathVariable Long employeeId) {
-        ProjectDto updated = projectService.removeEmployeeFromProject(projectId, employeeId);
-        return ResponseEntity.ok(ApiResponse.ok("Employee removed from project successfully", updated));
+        ProjectDto project = projectService.removeEmployeeFromProject(projectId, employeeId);
+        return ResponseEntity.ok(ApiResponse.success("Employee removed from project successfully", project));
     }
 
     @GetMapping("/employee/{employeeId}")
     public ResponseEntity<ApiResponse<List<ProjectDto>>> getProjectsByEmployee(
             @PathVariable Long employeeId) {
         List<ProjectDto> projects = projectService.getProjectsByEmployee(employeeId);
-        return ResponseEntity.ok(ApiResponse.ok(projects));
+        return ResponseEntity.ok(ApiResponse.success("Projects retrieved successfully", projects));
     }
 }

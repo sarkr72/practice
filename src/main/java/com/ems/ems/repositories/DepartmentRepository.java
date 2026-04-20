@@ -10,7 +10,7 @@ import com.ems.ems.entities.Department;
 @Repository
 public interface DepartmentRepository extends JpaRepository<Department, Long> {
 
-    Optional<Department> findByName(String name);
+    Optional<Department> findByNameIgnoreCase(String name);
 
-    boolean existsByName(String name);
+    boolean existsByNameIgnoreCase(String name);
 }

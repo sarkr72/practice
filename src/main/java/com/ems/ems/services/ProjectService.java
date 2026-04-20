@@ -6,13 +6,13 @@ import com.ems.ems.dtos.ProjectDto;
 
 public interface ProjectService {
 
-    ProjectDto createProject(ProjectDto projectDto);
+    ProjectDto createProject(ProjectDto dto);
 
     ProjectDto getProjectById(Long id);
 
     List<ProjectDto> getAllProjects();
 
-    ProjectDto updateProject(Long id, ProjectDto projectDto);
+    ProjectDto updateProject(Long id, ProjectDto dto);
 
     void deleteProject(Long id);
 

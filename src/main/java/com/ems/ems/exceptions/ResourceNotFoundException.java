@@ -1,16 +1,17 @@
 package com.ems.ems.exceptions;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.ResponseStatus;
-
-@ResponseStatus(HttpStatus.NOT_FOUND)
+/**
+ * Thrown by the service layer when a domain entity cannot be located by its
+ * identifier. The {@code GlobalExceptionHandler} translates this to an HTTP
+ * 404 response.
+ */
 public class ResourceNotFoundException extends RuntimeException {
 
     public ResourceNotFoundException(String message) {
         super(message);
     }
 
-    public ResourceNotFoundException(String resourceName, String fieldName, Object fieldValue) {
-        super(String.format("%s not found with %s: '%s'", resourceName, fieldName, fieldValue));
+    public static ResourceNotFoundException forResource(String resourceName, Object id) {
+        return new ResourceNotFoundException(resourceName + " not found with id: " + id);
     }
 }

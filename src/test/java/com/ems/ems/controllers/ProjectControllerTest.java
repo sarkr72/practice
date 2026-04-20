@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
+import com.ems.ems.entities.ProjectStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -72,30 +73,32 @@ class ProjectControllerTest {
     // ───────────────────── test data builders ─────────────────────
 
     private ProjectDto buildProjectDto(Long id, String name, String status, Set<Long> employeeIds) {
-        return ProjectDto.builder()
-                .id(id)
-                .name(name)
-                .description("Project description")
-                .startDate(LocalDate.of(2024, 1, 15))
-                .endDate(LocalDate.of(2024, 12, 31))
-                .status(status)
-                .employeeIds(employeeIds != null ? employeeIds : Set.of())
-                .employeeCount(employeeIds != null ? employeeIds.size() : 0)
-                .build();
+        Set<Long> ids = employeeIds != null ? employeeIds : Set.of();
+
+        ProjectDto dto = new ProjectDto();
+        dto.setId(id);
+        dto.setName(name);
+        dto.setDescription("Project description");
+        dto.setStartDate(LocalDate.of(2024, 1, 15));
+        dto.setEndDate(LocalDate.of(2024, 12, 31));
+        dto.setStatus(status != null ? ProjectStatus.valueOf(status) : null);
+        dto.setEmployeeIds(ids);
+        dto.setEmployeeCount(ids.size());
+        return dto;
     }
 
     private ProjectDto buildDefaultProject() {
-        return buildProjectDto(PROJECT_ID, "Atlas", "IN_PROGRESS", Set.of(10L, 20L));
+        return buildProjectDto(PROJECT_ID, "Atlas", "ACTIVE", Set.of(10L, 20L));
     }
 
     private ProjectDto buildCreateRequest() {
-        return ProjectDto.builder()
-                .name("Atlas")
-                .description("Core banking migration")
-                .startDate(LocalDate.of(2024, 1, 15))
-                .endDate(LocalDate.of(2024, 12, 31))
-                .status("PLANNED")
-                .build();
+        ProjectDto dto = new ProjectDto();
+        dto.setName("Atlas");
+        dto.setDescription("Core banking migration");
+        dto.setStartDate(LocalDate.of(2024, 1, 15));
+        dto.setEndDate(LocalDate.of(2024, 12, 31));
+        dto.setStatus(ProjectStatus.PLANNING);
+        return dto;
     }
 
     // ───────────────────── POST /api/projects ─────────────────────
@@ -120,7 +123,7 @@ class ProjectControllerTest {
                     .andExpect(jsonPath("$.message").value("Project created successfully"))
                     .andExpect(jsonPath("$.data.id").value(PROJECT_ID))
                     .andExpect(jsonPath("$.data.name").value("Atlas"))
-                    .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                    .andExpect(jsonPath("$.data.status").value("ACTIVE"))
                     .andExpect(jsonPath("$.data.employeeIds", hasSize(2)))
                     .andExpect(jsonPath("$.timestamp").exists());
 
@@ -175,7 +178,9 @@ class ProjectControllerTest {
         @Test
         @DisplayName("should accept request when optional fields are null")
         void createProject_optionalFieldsNull_returns201() throws Exception {
-            ProjectDto request = ProjectDto.builder().name("Minimal").build();
+            ProjectDto request = new ProjectDto();
+            request.setName("Minimal");
+
             ProjectDto response = buildProjectDto(2L, "Minimal", null, Set.of());
 
             given(projectService.createProject(any(ProjectDto.class))).willReturn(response);
@@ -242,8 +247,8 @@ class ProjectControllerTest {
         @Test
         @DisplayName("should return 200 and list of projects")
         void getAllProjects_projectsExist_returnsList() throws Exception {
-            ProjectDto proj1 = buildProjectDto(1L, "Atlas", "IN_PROGRESS", Set.of(10L));
-            ProjectDto proj2 = buildProjectDto(2L, "Mercury", "PLANNED", Set.of());
+            ProjectDto proj1 = buildProjectDto(1L, "Atlas", "ACTIVE", Set.of(10L));
+            ProjectDto proj2 = buildProjectDto(2L, "Mercury", "PLANNING", Set.of());
 
             given(projectService.getAllProjects()).willReturn(List.of(proj1, proj2));
 
@@ -276,7 +281,7 @@ class ProjectControllerTest {
         @DisplayName("should return 200 and updated project when request is valid")
         void updateProject_validRequest_returns200() throws Exception {
             ProjectDto request = buildCreateRequest();
-            request.setStatus("COMPLETED");
+            request.setStatus(ProjectStatus.COMPLETED);
 
             ProjectDto response = buildProjectDto(PROJECT_ID, "Atlas", "COMPLETED", Set.of(10L, 20L));
 
@@ -368,7 +373,7 @@ class ProjectControllerTest {
         @Test
         @DisplayName("should return 200 and updated project when employee added")
         void addEmployee_validIds_returns200() throws Exception {
-            ProjectDto response = buildProjectDto(PROJECT_ID, "Atlas", "IN_PROGRESS", Set.of(EMP_ID));
+            ProjectDto response = buildProjectDto(PROJECT_ID, "Atlas", "ACTIVE", Set.of(EMP_ID));
 
             given(projectService.addEmployeeToProject(PROJECT_ID, EMP_ID)).willReturn(response);
 
@@ -417,7 +422,7 @@ class ProjectControllerTest {
         @Test
         @DisplayName("should return 200 and updated project when employee removed")
         void removeEmployee_validIds_returns200() throws Exception {
-            ProjectDto response = buildProjectDto(PROJECT_ID, "Atlas", "IN_PROGRESS", Set.of());
+            ProjectDto response = buildProjectDto(PROJECT_ID, "Atlas", "ACTIVE", Set.of());
 
             given(projectService.removeEmployeeFromProject(PROJECT_ID, EMP_ID)).willReturn(response);
 
@@ -453,8 +458,8 @@ class ProjectControllerTest {
         @Test
         @DisplayName("should return 200 and projects for given employee")
         void getProjectsByEmployee_existingEmployee_returnsList() throws Exception {
-            ProjectDto proj1 = buildProjectDto(1L, "Atlas", "IN_PROGRESS", Set.of(EMP_ID));
-            ProjectDto proj2 = buildProjectDto(2L, "Mercury", "PLANNED", Set.of(EMP_ID));
+            ProjectDto proj1 = buildProjectDto(1L, "Atlas", "ACTIVE", Set.of(EMP_ID));
+            ProjectDto proj2 = buildProjectDto(2L, "Mercury", "PLANNING", Set.of(EMP_ID));
 
             given(projectService.getProjectsByEmployee(EMP_ID)).willReturn(List.of(proj1, proj2));
 

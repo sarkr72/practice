@@ -13,12 +13,23 @@ import com.ems.ems.entities.Project;
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, Long> {
 
-    Optional<Project> findByName(String name);
+    @Query("""
+            SELECT DISTINCT p FROM Project p
+            LEFT JOIN FETCH p.employees
+            WHERE p.id = :id
+            """)
+    Optional<Project> findByIdWithEmployees(@Param("id") Long id);
 
-    boolean existsByName(String name);
+    @Query("""
+            SELECT DISTINCT p FROM Project p
+            LEFT JOIN FETCH p.employees
+            """)
+    List<Project> findAllWithEmployees();
 
-    @Query("SELECT p FROM Project p JOIN p.employees e WHERE e.id = :employeeId")
+    @Query("""
+            SELECT DISTINCT p FROM Project p
+            JOIN p.employees e
+            WHERE e.id = :employeeId
+            """)
     List<Project> findByEmployeeId(@Param("employeeId") Long employeeId);
-
-    List<Project> findByStatus(String status);
 }

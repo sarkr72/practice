@@ -1,5 +1,6 @@
 package com.ems.ems.controllers;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
@@ -64,19 +65,19 @@ class EmployeeControllerTest {
     // ───────────────────── test data builders ─────────────────────
 
     private EmployeeDto buildEmployeeDto(Long id, String firstName, String lastName, String email) {
-        return EmployeeDto.builder()
-                .id(id)
-                .firstName(firstName)
-                .lastName(lastName)
-                .email(email)
-                .phone("555-0100")
-                .jobTitle("Software Engineer")
-                .salary(95000.0)
-                .hireDate(LocalDate.of(2024, 3, 15))
-                .active(true)
-                .departmentId(DEPT_ID)
-                .departmentName("Engineering")
-                .build();
+        EmployeeDto dto = new EmployeeDto();
+        dto.setId(id);
+        dto.setFirstName(firstName);
+        dto.setLastName(lastName);
+        dto.setEmail(email);
+        dto.setPhone("555-0100");
+        dto.setJobTitle("Software Engineer");
+        dto.setSalary(BigDecimal.valueOf(95000.0));
+        dto.setHireDate(LocalDate.of(2024, 3, 15));
+        dto.setActive(true);
+        dto.setDepartmentId(DEPT_ID);
+        dto.setDepartmentName("Engineering");
+        return dto;
     }
 
     private EmployeeDto buildDefaultEmployee() {
@@ -84,16 +85,16 @@ class EmployeeControllerTest {
     }
 
     private EmployeeDto buildCreateRequest() {
-        return EmployeeDto.builder()
-                .firstName("John")
-                .lastName("Doe")
-                .email("john.doe@ems.com")
-                .phone("555-0100")
-                .jobTitle("Software Engineer")
-                .salary(95000.0)
-                .hireDate(LocalDate.of(2024, 3, 15))
-                .departmentId(DEPT_ID)
-                .build();
+        EmployeeDto dto = new EmployeeDto();
+        dto.setFirstName("John");
+        dto.setLastName("Doe");
+        dto.setEmail("john.doe@ems.com");
+        dto.setPhone("555-0100");
+        dto.setJobTitle("Software Engineer");
+        dto.setSalary(BigDecimal.valueOf(95000.0));
+        dto.setHireDate(LocalDate.of(2024, 3, 15));
+        dto.setDepartmentId(DEPT_ID);
+        return dto;
     }
 
     // ───────────────────── POST /api/employees ─────────────────────
@@ -187,7 +188,7 @@ class EmployeeControllerTest {
         @DisplayName("should return 400 when salary is negative")
         void createEmployee_negativeSalary_returns400() throws Exception {
             EmployeeDto request = buildCreateRequest();
-            request.setSalary(-50000.0);
+            request.setSalary(BigDecimal.valueOf(-50000.0));
 
             mockMvc.perform(post(BASE_URL)
                             .contentType(MediaType.APPLICATION_JSON)
@@ -201,7 +202,7 @@ class EmployeeControllerTest {
         @DisplayName("should return 400 when salary is zero")
         void createEmployee_zeroSalary_returns400() throws Exception {
             EmployeeDto request = buildCreateRequest();
-            request.setSalary(0.0);
+            request.setSalary(BigDecimal.valueOf(0.0));
 
             mockMvc.perform(post(BASE_URL)
                             .contentType(MediaType.APPLICATION_JSON)
@@ -214,12 +215,11 @@ class EmployeeControllerTest {
         @Test
         @DisplayName("should return 400 when multiple fields fail validation")
         void createEmployee_multipleViolations_returns400() throws Exception {
-            EmployeeDto request = EmployeeDto.builder()
-                    .firstName("")
-                    .lastName("")
-                    .email("bad")
-                    .salary(-1.0)
-                    .build();
+            EmployeeDto request = new EmployeeDto();
+            request.setFirstName("");
+            request.setLastName("");
+            request.setEmail("bad");
+            request.setSalary(BigDecimal.valueOf(-1.0));
 
             mockMvc.perform(post(BASE_URL)
                             .contentType(MediaType.APPLICATION_JSON)
@@ -343,11 +343,11 @@ class EmployeeControllerTest {
         void updateEmployee_validRequest_returns200() throws Exception {
             EmployeeDto request = buildCreateRequest();
             request.setJobTitle("Senior Software Engineer");
-            request.setSalary(130000.0);
+            request.setSalary(BigDecimal.valueOf(130000.0));
 
             EmployeeDto response = buildDefaultEmployee();
             response.setJobTitle("Senior Software Engineer");
-            response.setSalary(130000.0);
+            response.setSalary(BigDecimal.valueOf(130000.0));
 
             given(employeeService.updateEmployee(eq(EMP_ID), any(EmployeeDto.class))).willReturn(response);
 

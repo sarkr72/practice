@@ -19,61 +19,62 @@ import com.ems.ems.dtos.EmployeeDto;
 import com.ems.ems.services.EmployeeService;
 
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/employees")
-@RequiredArgsConstructor
 public class EmployeeController {
 
     private final EmployeeService employeeService;
 
+    public EmployeeController(EmployeeService employeeService) {
+        this.employeeService = employeeService;
+    }
+
     @PostMapping
     public ResponseEntity<ApiResponse<EmployeeDto>> createEmployee(
-            @Valid @RequestBody EmployeeDto employeeDto) {
-        EmployeeDto created = employeeService.createEmployee(employeeDto);
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(ApiResponse.ok("Employee created successfully", created));
+            @Valid @RequestBody EmployeeDto request) {
+        EmployeeDto created = employeeService.createEmployee(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Employee created successfully", created));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<EmployeeDto>> getEmployee(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<EmployeeDto>> getEmployeeById(@PathVariable Long id) {
         EmployeeDto employee = employeeService.getEmployeeById(id);
-        return ResponseEntity.ok(ApiResponse.ok(employee));
+        return ResponseEntity.ok(ApiResponse.success("Employee retrieved successfully", employee));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<EmployeeDto>>> getAllEmployees() {
         List<EmployeeDto> employees = employeeService.getAllEmployees();
-        return ResponseEntity.ok(ApiResponse.ok(employees));
+        return ResponseEntity.ok(ApiResponse.success("Employees retrieved successfully", employees));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<EmployeeDto>> updateEmployee(
             @PathVariable Long id,
-            @Valid @RequestBody EmployeeDto employeeDto) {
-        EmployeeDto updated = employeeService.updateEmployee(id, employeeDto);
-        return ResponseEntity.ok(ApiResponse.ok("Employee updated successfully", updated));
+            @Valid @RequestBody EmployeeDto request) {
+        EmployeeDto updated = employeeService.updateEmployee(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Employee updated successfully", updated));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteEmployee(@PathVariable Long id) {
         employeeService.deleteEmployee(id);
-        return ResponseEntity.ok(ApiResponse.ok("Employee deleted successfully", null));
+        return ResponseEntity.ok(ApiResponse.success("Employee deleted successfully"));
     }
 
     @GetMapping("/department/{departmentId}")
-    public ResponseEntity<ApiResponse<List<EmployeeDto>>> getByDepartment(
+    public ResponseEntity<ApiResponse<List<EmployeeDto>>> getEmployeesByDepartment(
             @PathVariable Long departmentId) {
         List<EmployeeDto> employees = employeeService.getEmployeesByDepartment(departmentId);
-        return ResponseEntity.ok(ApiResponse.ok(employees));
+        return ResponseEntity.ok(ApiResponse.success("Employees retrieved successfully", employees));
     }
 
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<List<EmployeeDto>>> searchEmployees(
             @RequestParam String query) {
         List<EmployeeDto> employees = employeeService.searchEmployees(query);
-        return ResponseEntity.ok(ApiResponse.ok(employees));
+        return ResponseEntity.ok(ApiResponse.success("Search completed successfully", employees));
     }
 }
