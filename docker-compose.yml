@@ -1,0 +1,90 @@
+# Local dev stack. `docker compose up -d` brings up MySQL + Redis + Kafka + Kafka UI.
+# The Spring app runs on the HOST (mvn spring-boot:run -Dspring-boot.run.profiles=local)
+# and connects to these services on localhost. This is the faster dev loop — no image
+# rebuild on every code change. For a full containerized run, use the `app` profile
+# in docker-compose.override.yml (see below).
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ems-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ems
+      MYSQL_USER: ems
+      MYSQL_PASSWORD: ems
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uems", "-pems"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [ems]
+
+  redis:
+    image: redis:7-alpine
+    container_name: ems-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [ems]
+
+  # KRaft-mode Kafka — no Zookeeper required. Simpler setup, matches MSK's trajectory.
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: ems-kafka
+    ports:
+      - "9092:9092"   # host -> external listener
+      - "9093:9093"   # controller
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:29092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks: [ems]
+
+  # Browser-based Kafka inspector at http://localhost:8090
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: ems-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    networks: [ems]
+
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  ems:
+    driver: bridge

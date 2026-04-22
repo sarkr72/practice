@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ems-config
+data:
+  SPRING_PROFILES_ACTIVE: "dev"
+  SERVER_PORT: "8080"
+  # Non-secret Kafka/Redis/DB endpoints; overlays override with real values from Terraform outputs
+  DB_HOST: "placeholder"
+  DB_PORT: "3306"
+  DB_NAME: "ems"
+  REDIS_HOST: "placeholder"
+  REDIS_PORT: "6379"
+  REDIS_SSL_ENABLED: "true"
+  KAFKA_BOOTSTRAP_SERVERS: "placeholder:9098"

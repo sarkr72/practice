@@ -6,6 +6,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Configuration
 public class AsyncConfig {
 
@@ -17,6 +20,7 @@ public class AsyncConfig {
         executor.setQueueCapacity(25);
         executor.setThreadNamePrefix("ems-async-");
         executor.initialize();
+        log.info("Async task executor initialized: corePoolSize=5, maxPoolSize=10, queueCapacity=25");
         return executor;
     }
 }

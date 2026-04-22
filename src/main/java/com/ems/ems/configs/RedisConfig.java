@@ -13,6 +13,9 @@ import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSeriali
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Configuration
 public class RedisConfig {
 
@@ -46,8 +49,10 @@ public class RedisConfig {
                         RedisSerializationContext.SerializationPair.fromSerializer(JSON_SERIALIZER))
                 .disableCachingNullValues();
 
-        return RedisCacheManager.builder(connectionFactory)
+        RedisCacheManager manager = RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)
                 .build();
+        log.info("RedisCacheManager initialized with TTL=30min");
+        return manager;
     }
 }

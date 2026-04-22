@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ems
+  labels:
+    app: ems
+spec:
+  type: ClusterIP
+  selector:
+    app: ems
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
