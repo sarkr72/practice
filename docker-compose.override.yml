@@ -1,26 +1,23 @@
-# Auto-merged with docker-compose.yml when you run `docker compose up`.
-# Uncomment the `app` service below to run the Spring app as a container too.
-# Normal dev loop: leave commented out, run app on host via Maven for fast rebuilds.
-
 services:
-  # app:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   image: ems:local
-  #   container_name: ems-app
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #     kafka:
-  #       condition: service_healthy
-  #   environment:
-  #     SPRING_PROFILES_ACTIVE: local
-  #     SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ems?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-  #     SPRING_DATA_REDIS_HOST: redis
-  #     SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-  #   ports:
-  #     - "8080:8080"
-  #   networks: [ems]
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ems:local
+    container_name: ems-app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ems?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    ports:
+      - "8080:8080"
+    networks:
+      - ems
