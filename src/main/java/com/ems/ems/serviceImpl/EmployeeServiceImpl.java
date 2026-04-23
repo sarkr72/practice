@@ -6,6 +6,8 @@ import java.util.stream.Collectors;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class EmployeeServiceImpl implements EmployeeService {
 
     private final EmployeeRepository employeeRepository;
@@ -54,7 +57,12 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     @Cacheable(value = "employee", key = "#id")
-    @Retryable(retryFor = Exception.class, maxAttempts = 3, backoff = @Backoff(delay = 1000))
+    // Narrow retry: only transient DB issues (deadlocks, connection blips).
+    // Do NOT retry business exceptions like ResourceNotFoundException.
+    @Retryable(
+            retryFor = { TransientDataAccessException.class, CannotAcquireLockException.class },
+            maxAttempts = 3,
+            backoff = @Backoff(delay = 200, multiplier = 2.0, maxDelay = 2000))
     public EmployeeDto getEmployeeById(Long id) {
         log.debug("Fetching employee with id: {}", id);
         Employee employee = employeeRepository.findById(id)
@@ -80,7 +88,6 @@ public class EmployeeServiceImpl implements EmployeeService {
         Employee employee = employeeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee", "id", id));
 
-        // Check email uniqueness if changed
         if (!employee.getEmail().equals(dto.getEmail())
                 && employeeRepository.existsByEmail(dto.getEmail())) {
             throw new DuplicateResourceException("Employee", "email", dto.getEmail());
@@ -93,7 +100,9 @@ public class EmployeeServiceImpl implements EmployeeService {
         employee.setJobTitle(dto.getJobTitle());
         employee.setSalary(dto.getSalary());
         employee.setHireDate(dto.getHireDate());
-        employee.setActive(dto.getActive());
+        if (dto.getActive() != null) {
+            employee.setActive(dto.getActive());
+        }
 
         if (dto.getDepartmentId() != null) {
             Department dept = departmentRepository.findById(dto.getDepartmentId())
@@ -165,7 +174,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         employee.setJobTitle(dto.getJobTitle());
         employee.setSalary(dto.getSalary());
         employee.setHireDate(dto.getHireDate());
-        employee.setActive(dto.getActive() != null ? dto.getActive() : true);
+        employee.setActive(dto.getActive() != null ? dto.getActive() : Boolean.TRUE);
         return employee;
     }
 }

@@ -1,0 +1,40 @@
+# Integration test profile. Used by *IT.java via @ActiveProfiles("it").
+# The MySQL datasource is supplied by Testcontainers @ServiceConnection;
+# no datasource URL needed here.
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+
+  # Prevent @SpringBootTest from trying to connect to Redis/Kafka.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+      - org.springframework.boot.autoconfigure.session.SessionAutoConfiguration
+
+  session:
+    store-type: none
+  batch:
+    job:
+      enabled: false
+
+ems:
+  kafka:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    com.ems.ems: INFO
+    org.testcontainers: INFO

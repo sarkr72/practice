@@ -1,0 +1,96 @@
+###############################################################################
+# Common configuration - applied in ALL profiles.
+# Profile-specific overrides live in application-{local,dev,prod}.yml
+#
+# Active profile is selected by:
+#   SPRING_PROFILES_ACTIVE env var (set by k8s ConfigMap)
+#   -Dspring-boot.run.profiles=local (for local dev via Maven)
+###############################################################################
+
+spring:
+  application:
+    name: ems
+  profiles:
+    default: local
+
+  # Jackson: ISO-8601 dates, never write as numeric timestamps
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: false
+    deserialization:
+      fail-on-unknown-properties: false
+    time-zone: UTC
+
+  # JPA defaults - profiles may override ddl-auto and show-sql
+  jpa:
+    open-in-view: false            # fail-fast on lazy loading bugs (enterprise default)
+    hibernate:
+      ddl-auto: validate           # Flyway owns schema; JPA only verifies
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+  # Flyway manages all schema changes
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  # Graceful shutdown - k8s preStop sleeps 15s, then SIGTERM arrives here
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+server:
+  port: 8080
+  shutdown: graceful
+  # Don't leak server details in error responses or Server header
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+  tomcat:
+    max-threads: 200
+    accept-count: 100
+    connection-timeout: 20s
+
+# Actuator - k8s probes hit /actuator/health/liveness and /readiness
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never           # never leak DB/Redis hostnames to the world
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,redis
+  metrics:
+    tags:
+      application: ems
+  info:
+    env:
+      enabled: true
+
+# Custom toggles
+ems:
+  kafka:
+    enabled: false                  # profiles turn this on
+
+# Logging - structured JSON in prod via logback-spring.xml
+logging:
+  level:
+    root: INFO
+    com.ems.ems: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN

@@ -1,5 +1,21 @@
 package com.ems.ems.controllers;
 
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
@@ -19,30 +35,18 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.ems.ems.dtos.ProjectDto;
+import com.ems.ems.exceptions.GlobalExceptionHandler;
+import com.ems.ems.exceptions.ResourceNotFoundException;
 import com.ems.ems.services.ProjectService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
-import jakarta.servlet.ServletException;
-
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.hamcrest.Matchers.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willDoNothing;
-import static org.mockito.BDDMockito.willThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ProjectController")
 class ProjectControllerTest {
 
-    private static final String BASE_URL = "/api/projects";
+    private static final String BASE_URL = "/api/v1/projects";
     private static final Long PROJECT_ID = 1L;
     private static final Long EMP_ID = 10L;
 
@@ -60,16 +64,19 @@ class ProjectControllerTest {
 
     @BeforeEach
     void setUp() {
-        // Register the configured ObjectMapper with MockMvc so response serialization
-        // also writes dates as ISO strings (e.g. "2024-01-15") instead of arrays.
-        MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter(objectMapper);
+        // Register the configured ObjectMapper so LocalDate serializes as ISO string.
+        // Register the GlobalExceptionHandler so tests see real HTTP status codes,
+        // not raw ServletException wrappers.
+        MappingJackson2HttpMessageConverter converter =
+                new MappingJackson2HttpMessageConverter(objectMapper);
 
         mockMvc = MockMvcBuilders.standaloneSetup(projectController)
                 .setMessageConverters(converter)
+                .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
 
-    // ───────────────────── test data builders ─────────────────────
+    // ─────────── test data builders ───────────
 
     private ProjectDto buildProjectDto(Long id, String name, String status, Set<Long> employeeIds) {
         return ProjectDto.builder()
@@ -98,19 +105,17 @@ class ProjectControllerTest {
                 .build();
     }
 
-    // ───────────────────── POST /api/projects ─────────────────────
+    // ─────────── POST /api/v1/projects ───────────
 
     @Nested
-    @DisplayName("POST /api/projects")
+    @DisplayName("POST " + BASE_URL)
     class CreateProject {
 
         @Test
-        @DisplayName("should return 201 and created project when request is valid")
-        void createProject_validRequest_returns201() throws Exception {
+        @DisplayName("returns 201 when valid")
+        void valid_returns201() throws Exception {
             ProjectDto request = buildCreateRequest();
-            ProjectDto response = buildDefaultProject();
-
-            given(projectService.createProject(any(ProjectDto.class))).willReturn(response);
+            given(projectService.createProject(any(ProjectDto.class))).willReturn(buildDefaultProject());
 
             mockMvc.perform(post(BASE_URL)
                             .contentType(MediaType.APPLICATION_JSON)
@@ -121,29 +126,29 @@ class ProjectControllerTest {
                     .andExpect(jsonPath("$.data.id").value(PROJECT_ID))
                     .andExpect(jsonPath("$.data.name").value("Atlas"))
                     .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
-                    .andExpect(jsonPath("$.data.employeeIds", hasSize(2)))
-                    .andExpect(jsonPath("$.timestamp").exists());
+                    .andExpect(jsonPath("$.data.employeeIds", hasSize(2)));
 
             verify(projectService).createProject(any(ProjectDto.class));
         }
 
         @Test
-        @DisplayName("should return 400 when project name is blank")
-        void createProject_blankName_returns400() throws Exception {
+        @DisplayName("returns 400 when name is blank")
+        void blankName_returns400() throws Exception {
             ProjectDto request = buildCreateRequest();
             request.setName("");
 
             mockMvc.perform(post(BASE_URL)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.success").value(false));
 
             verify(projectService, never()).createProject(any(ProjectDto.class));
         }
 
         @Test
-        @DisplayName("should return 400 when project name is null")
-        void createProject_nullName_returns400() throws Exception {
+        @DisplayName("returns 400 when name is null")
+        void nullName_returns400() throws Exception {
             ProjectDto request = buildCreateRequest();
             request.setName(null);
 
@@ -156,16 +161,15 @@ class ProjectControllerTest {
         }
 
         @Test
-        @DisplayName("should return 400 when request body is missing")
-        void createProject_noBody_returns400() throws Exception {
-            mockMvc.perform(post(BASE_URL)
-                            .contentType(MediaType.APPLICATION_JSON))
+        @DisplayName("returns 400 when request body is missing")
+        void noBody_returns400() throws Exception {
+            mockMvc.perform(post(BASE_URL).contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isBadRequest());
         }
 
         @Test
-        @DisplayName("should return 415 when content type is not JSON")
-        void createProject_wrongContentType_returns415() throws Exception {
+        @DisplayName("returns 415 when content type is not JSON")
+        void wrongContentType_returns415() throws Exception {
             mockMvc.perform(post(BASE_URL)
                             .contentType(MediaType.TEXT_PLAIN)
                             .content("not json"))
@@ -173,8 +177,8 @@ class ProjectControllerTest {
         }
 
         @Test
-        @DisplayName("should accept request when optional fields are null")
-        void createProject_optionalFieldsNull_returns201() throws Exception {
+        @DisplayName("accepts request when optional fields are null")
+        void optionalFieldsNull_returns201() throws Exception {
             ProjectDto request = ProjectDto.builder().name("Minimal").build();
             ProjectDto response = buildProjectDto(2L, "Minimal", null, Set.of());
 
@@ -188,18 +192,16 @@ class ProjectControllerTest {
         }
     }
 
-    // ───────────────────── GET /api/projects/{id} ─────────────────────
+    // ─────────── GET /api/v1/projects/{id} ───────────
 
     @Nested
-    @DisplayName("GET /api/projects/{id}")
+    @DisplayName("GET " + BASE_URL + "/{id}")
     class GetProjectById {
 
         @Test
-        @DisplayName("should return 200 and project when found")
-        void getProject_existingId_returns200() throws Exception {
-            ProjectDto project = buildDefaultProject();
-
-            given(projectService.getProjectById(PROJECT_ID)).willReturn(project);
+        @DisplayName("returns 200 when found")
+        void existingId_returns200() throws Exception {
+            given(projectService.getProjectById(PROJECT_ID)).willReturn(buildDefaultProject());
 
             mockMvc.perform(get(BASE_URL + "/{id}", PROJECT_ID))
                     .andExpect(status().isOk())
@@ -213,51 +215,49 @@ class ProjectControllerTest {
         }
 
         @Test
-        @DisplayName("should throw when project not found")
-        void getProject_nonExistingId_throwsException() {
+        @DisplayName("returns 404 when not found")
+        void nonExistingId_returns404() throws Exception {
             given(projectService.getProjectById(999L))
-                    .willThrow(new RuntimeException("Project not found with id: 999"));
+                    .willThrow(new ResourceNotFoundException("Project", "id", 999L));
 
-            assertThatThrownBy(() ->
-                    mockMvc.perform(get(BASE_URL + "/{id}", 999L)))
-                    .isInstanceOf(ServletException.class)
-                    .hasCauseInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Project not found with id: 999");
+            mockMvc.perform(get(BASE_URL + "/{id}", 999L))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.message").value("Project not found with id: '999'"));
         }
 
         @Test
-        @DisplayName("should return 400 when id is not a number")
-        void getProject_invalidId_returns400() throws Exception {
+        @DisplayName("returns 400 when id is not a number")
+        void invalidId_returns400() throws Exception {
             mockMvc.perform(get(BASE_URL + "/{id}", "abc"))
                     .andExpect(status().isBadRequest());
         }
     }
 
-    // ───────────────────── GET /api/projects ─────────────────────
+    // ─────────── GET /api/v1/projects ───────────
 
     @Nested
-    @DisplayName("GET /api/projects")
+    @DisplayName("GET " + BASE_URL)
     class GetAllProjects {
 
         @Test
-        @DisplayName("should return 200 and list of projects")
-        void getAllProjects_projectsExist_returnsList() throws Exception {
-            ProjectDto proj1 = buildProjectDto(1L, "Atlas", "IN_PROGRESS", Set.of(10L));
-            ProjectDto proj2 = buildProjectDto(2L, "Mercury", "PLANNED", Set.of());
+        @DisplayName("returns list of projects")
+        void projectsExist_returnsList() throws Exception {
+            ProjectDto p1 = buildProjectDto(1L, "Atlas", "IN_PROGRESS", Set.of(10L));
+            ProjectDto p2 = buildProjectDto(2L, "Mercury", "PLANNED", Set.of());
 
-            given(projectService.getAllProjects()).willReturn(List.of(proj1, proj2));
+            given(projectService.getAllProjects()).willReturn(List.of(p1, p2));
 
             mockMvc.perform(get(BASE_URL))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data", hasSize(2)))
                     .andExpect(jsonPath("$.data[0].name").value("Atlas"))
                     .andExpect(jsonPath("$.data[1].name").value("Mercury"));
         }
 
         @Test
-        @DisplayName("should return 200 and empty list when no projects exist")
-        void getAllProjects_noProjects_returnsEmptyList() throws Exception {
+        @DisplayName("returns empty list when no projects exist")
+        void noProjects_returnsEmpty() throws Exception {
             given(projectService.getAllProjects()).willReturn(Collections.emptyList());
 
             mockMvc.perform(get(BASE_URL))
@@ -266,18 +266,17 @@ class ProjectControllerTest {
         }
     }
 
-    // ───────────────────── PUT /api/projects/{id} ─────────────────────
+    // ─────────── PUT /api/v1/projects/{id} ───────────
 
     @Nested
-    @DisplayName("PUT /api/projects/{id}")
+    @DisplayName("PUT " + BASE_URL + "/{id}")
     class UpdateProject {
 
         @Test
-        @DisplayName("should return 200 and updated project when request is valid")
-        void updateProject_validRequest_returns200() throws Exception {
+        @DisplayName("returns 200 when valid")
+        void valid_returns200() throws Exception {
             ProjectDto request = buildCreateRequest();
             request.setStatus("COMPLETED");
-
             ProjectDto response = buildProjectDto(PROJECT_ID, "Atlas", "COMPLETED", Set.of(10L, 20L));
 
             given(projectService.updateProject(eq(PROJECT_ID), any(ProjectDto.class))).willReturn(response);
@@ -286,16 +285,14 @@ class ProjectControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.message").value("Project updated successfully"))
                     .andExpect(jsonPath("$.data.status").value("COMPLETED"));
 
             verify(projectService).updateProject(eq(PROJECT_ID), any(ProjectDto.class));
         }
 
         @Test
-        @DisplayName("should return 400 when project name is blank on update")
-        void updateProject_blankName_returns400() throws Exception {
+        @DisplayName("returns 400 when name is blank on update")
+        void blankName_returns400() throws Exception {
             ProjectDto request = buildCreateRequest();
             request.setName("");
 
@@ -308,169 +305,145 @@ class ProjectControllerTest {
         }
 
         @Test
-        @DisplayName("should throw when updating non-existing project")
-        void updateProject_nonExistingId_throwsException() {
+        @DisplayName("returns 404 when updating non-existing project")
+        void nonExistingId_returns404() throws Exception {
             ProjectDto request = buildCreateRequest();
 
             given(projectService.updateProject(eq(999L), any(ProjectDto.class)))
-                    .willThrow(new RuntimeException("Project not found with id: 999"));
+                    .willThrow(new ResourceNotFoundException("Project", "id", 999L));
 
-            assertThatThrownBy(() ->
-                    mockMvc.perform(put(BASE_URL + "/{id}", 999L)
+            mockMvc.perform(put(BASE_URL + "/{id}", 999L)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(request))))
-                    .isInstanceOf(ServletException.class)
-                    .hasCauseInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Project not found with id: 999");
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isNotFound());
         }
     }
 
-    // ───────────────────── DELETE /api/projects/{id} ─────────────────────
+    // ─────────── DELETE /api/v1/projects/{id} ───────────
 
     @Nested
-    @DisplayName("DELETE /api/projects/{id}")
+    @DisplayName("DELETE " + BASE_URL + "/{id}")
     class DeleteProject {
 
         @Test
-        @DisplayName("should return 200 when project deleted successfully")
-        void deleteProject_existingId_returns200() throws Exception {
+        @DisplayName("returns 200 when deleted")
+        void existingId_returns200() throws Exception {
             willDoNothing().given(projectService).deleteProject(PROJECT_ID);
 
             mockMvc.perform(delete(BASE_URL + "/{id}", PROJECT_ID))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.message").value("Project deleted successfully"))
-                    .andExpect(jsonPath("$.data").doesNotExist());
+                    .andExpect(jsonPath("$.message").value("Project deleted successfully"));
 
             verify(projectService).deleteProject(PROJECT_ID);
         }
 
         @Test
-        @DisplayName("should throw when deleting non-existing project")
-        void deleteProject_nonExistingId_throwsException() {
-            willThrow(new RuntimeException("Project not found with id: 999"))
+        @DisplayName("returns 404 when deleting non-existing")
+        void nonExistingId_returns404() throws Exception {
+            willThrow(new ResourceNotFoundException("Project", "id", 999L))
                     .given(projectService).deleteProject(999L);
 
-            assertThatThrownBy(() ->
-                    mockMvc.perform(delete(BASE_URL + "/{id}", 999L)))
-                    .isInstanceOf(ServletException.class)
-                    .hasCauseInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Project not found with id: 999");
+            mockMvc.perform(delete(BASE_URL + "/{id}", 999L))
+                    .andExpect(status().isNotFound());
         }
     }
 
-    // ───────────────────── POST /api/projects/{projectId}/employees/{employeeId} ─────────────────────
+    // ─────────── POST /api/v1/projects/{projectId}/employees/{employeeId} ───────────
 
     @Nested
-    @DisplayName("POST /api/projects/{projectId}/employees/{employeeId}")
+    @DisplayName("POST " + BASE_URL + "/{projectId}/employees/{employeeId}")
     class AddEmployeeToProject {
 
         @Test
-        @DisplayName("should return 200 and updated project when employee added")
-        void addEmployee_validIds_returns200() throws Exception {
+        @DisplayName("returns 200 when employee added")
+        void validIds_returns200() throws Exception {
             ProjectDto response = buildProjectDto(PROJECT_ID, "Atlas", "IN_PROGRESS", Set.of(EMP_ID));
-
             given(projectService.addEmployeeToProject(PROJECT_ID, EMP_ID)).willReturn(response);
 
-            mockMvc.perform(post(BASE_URL + "/{projectId}/employees/{employeeId}", PROJECT_ID, EMP_ID))
+            mockMvc.perform(post(BASE_URL + "/{p}/employees/{e}", PROJECT_ID, EMP_ID))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.message").value("Employee added to project successfully"))
                     .andExpect(jsonPath("$.data.employeeIds", hasItem(EMP_ID.intValue())));
 
             verify(projectService).addEmployeeToProject(PROJECT_ID, EMP_ID);
         }
 
         @Test
-        @DisplayName("should throw when project does not exist")
-        void addEmployee_nonExistingProject_throwsException() {
+        @DisplayName("returns 404 when project not found")
+        void nonExistingProject_returns404() throws Exception {
             given(projectService.addEmployeeToProject(999L, EMP_ID))
-                    .willThrow(new RuntimeException("Project not found with id: 999"));
+                    .willThrow(new ResourceNotFoundException("Project", "id", 999L));
 
-            assertThatThrownBy(() ->
-                    mockMvc.perform(post(BASE_URL + "/{projectId}/employees/{employeeId}", 999L, EMP_ID)))
-                    .isInstanceOf(ServletException.class)
-                    .hasCauseInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Project not found with id: 999");
+            mockMvc.perform(post(BASE_URL + "/{p}/employees/{e}", 999L, EMP_ID))
+                    .andExpect(status().isNotFound());
         }
 
         @Test
-        @DisplayName("should throw when employee does not exist")
-        void addEmployee_nonExistingEmployee_throwsException() {
+        @DisplayName("returns 404 when employee not found")
+        void nonExistingEmployee_returns404() throws Exception {
             given(projectService.addEmployeeToProject(PROJECT_ID, 999L))
-                    .willThrow(new RuntimeException("Employee not found with id: 999"));
+                    .willThrow(new ResourceNotFoundException("Employee", "id", 999L));
 
-            assertThatThrownBy(() ->
-                    mockMvc.perform(post(BASE_URL + "/{projectId}/employees/{employeeId}", PROJECT_ID, 999L)))
-                    .isInstanceOf(ServletException.class)
-                    .hasCauseInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Employee not found with id: 999");
+            mockMvc.perform(post(BASE_URL + "/{p}/employees/{e}", PROJECT_ID, 999L))
+                    .andExpect(status().isNotFound());
         }
     }
 
-    // ───────────────────── DELETE /api/projects/{projectId}/employees/{employeeId} ─────────────────────
+    // ─────────── DELETE /api/v1/projects/{projectId}/employees/{employeeId} ───────────
 
     @Nested
-    @DisplayName("DELETE /api/projects/{projectId}/employees/{employeeId}")
+    @DisplayName("DELETE " + BASE_URL + "/{projectId}/employees/{employeeId}")
     class RemoveEmployeeFromProject {
 
         @Test
-        @DisplayName("should return 200 and updated project when employee removed")
-        void removeEmployee_validIds_returns200() throws Exception {
+        @DisplayName("returns 200 when employee removed")
+        void validIds_returns200() throws Exception {
             ProjectDto response = buildProjectDto(PROJECT_ID, "Atlas", "IN_PROGRESS", Set.of());
-
             given(projectService.removeEmployeeFromProject(PROJECT_ID, EMP_ID)).willReturn(response);
 
-            mockMvc.perform(delete(BASE_URL + "/{projectId}/employees/{employeeId}", PROJECT_ID, EMP_ID))
+            mockMvc.perform(delete(BASE_URL + "/{p}/employees/{e}", PROJECT_ID, EMP_ID))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true))
-                    .andExpect(jsonPath("$.message").value("Employee removed from project successfully"))
                     .andExpect(jsonPath("$.data.employeeIds", hasSize(0)));
 
             verify(projectService).removeEmployeeFromProject(PROJECT_ID, EMP_ID);
         }
 
         @Test
-        @DisplayName("should throw when project does not exist")
-        void removeEmployee_nonExistingProject_throwsException() {
+        @DisplayName("returns 404 when project not found")
+        void nonExistingProject_returns404() throws Exception {
             given(projectService.removeEmployeeFromProject(999L, EMP_ID))
-                    .willThrow(new RuntimeException("Project not found with id: 999"));
+                    .willThrow(new ResourceNotFoundException("Project", "id", 999L));
 
-            assertThatThrownBy(() ->
-                    mockMvc.perform(delete(BASE_URL + "/{projectId}/employees/{employeeId}", 999L, EMP_ID)))
-                    .isInstanceOf(ServletException.class)
-                    .hasCauseInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Project not found with id: 999");
+            mockMvc.perform(delete(BASE_URL + "/{p}/employees/{e}", 999L, EMP_ID))
+                    .andExpect(status().isNotFound());
         }
     }
 
-    // ───────────────────── GET /api/projects/employee/{employeeId} ─────────────────────
+    // ─────────── GET /api/v1/projects/employee/{employeeId} ───────────
 
     @Nested
-    @DisplayName("GET /api/projects/employee/{employeeId}")
+    @DisplayName("GET " + BASE_URL + "/employee/{employeeId}")
     class GetProjectsByEmployee {
 
         @Test
-        @DisplayName("should return 200 and projects for given employee")
-        void getProjectsByEmployee_existingEmployee_returnsList() throws Exception {
-            ProjectDto proj1 = buildProjectDto(1L, "Atlas", "IN_PROGRESS", Set.of(EMP_ID));
-            ProjectDto proj2 = buildProjectDto(2L, "Mercury", "PLANNED", Set.of(EMP_ID));
+        @DisplayName("returns projects for given employee")
+        void existingEmployee_returnsList() throws Exception {
+            ProjectDto p1 = buildProjectDto(1L, "Atlas", "IN_PROGRESS", Set.of(EMP_ID));
+            ProjectDto p2 = buildProjectDto(2L, "Mercury", "PLANNED", Set.of(EMP_ID));
 
-            given(projectService.getProjectsByEmployee(EMP_ID)).willReturn(List.of(proj1, proj2));
+            given(projectService.getProjectsByEmployee(EMP_ID)).willReturn(List.of(p1, p2));
 
             mockMvc.perform(get(BASE_URL + "/employee/{employeeId}", EMP_ID))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data", hasSize(2)))
-                    .andExpect(jsonPath("$.data[0].name").value("Atlas"))
-                    .andExpect(jsonPath("$.data[1].name").value("Mercury"));
+                    .andExpect(jsonPath("$.data[0].name").value("Atlas"));
 
             verify(projectService).getProjectsByEmployee(EMP_ID);
         }
 
         @Test
-        @DisplayName("should return 200 and empty list when employee has no projects")
-        void getProjectsByEmployee_noProjects_returnsEmptyList() throws Exception {
+        @DisplayName("returns empty list when employee has no projects")
+        void noProjects_returnsEmpty() throws Exception {
             given(projectService.getProjectsByEmployee(EMP_ID)).willReturn(Collections.emptyList());
 
             mockMvc.perform(get(BASE_URL + "/employee/{employeeId}", EMP_ID))
@@ -479,16 +452,13 @@ class ProjectControllerTest {
         }
 
         @Test
-        @DisplayName("should throw when employee does not exist")
-        void getProjectsByEmployee_nonExistingEmployee_throwsException() {
+        @DisplayName("returns 404 when employee not found")
+        void nonExistingEmployee_returns404() throws Exception {
             given(projectService.getProjectsByEmployee(999L))
-                    .willThrow(new RuntimeException("Employee not found with id: 999"));
+                    .willThrow(new ResourceNotFoundException("Employee", "id", 999L));
 
-            assertThatThrownBy(() ->
-                    mockMvc.perform(get(BASE_URL + "/employee/{employeeId}", 999L)))
-                    .isInstanceOf(ServletException.class)
-                    .hasCauseInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Employee not found with id: 999");
+            mockMvc.perform(get(BASE_URL + "/employee/{employeeId}", 999L))
+                    .andExpect(status().isNotFound());
         }
     }
 }

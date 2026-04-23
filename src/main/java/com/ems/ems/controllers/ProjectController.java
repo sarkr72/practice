@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/projects")
+@RequestMapping("/api/v1/projects")
 @RequiredArgsConstructor
 public class ProjectController {
 
@@ -32,7 +32,7 @@ public class ProjectController {
     @PostMapping
     public ResponseEntity<ApiResponse<ProjectDto>> createProject(
             @Valid @RequestBody ProjectDto projectDto) {
-        log.info("POST /api/projects - name: {}", projectDto.getName());
+        log.info("POST /api/v1/projects - name: {}", projectDto.getName());
         ProjectDto created = projectService.createProject(projectDto);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -41,14 +41,14 @@ public class ProjectController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<ProjectDto>> getProject(@PathVariable Long id) {
-        log.debug("GET /api/projects/{}", id);
+        log.debug("GET /api/v1/projects/{}", id);
         ProjectDto project = projectService.getProjectById(id);
         return ResponseEntity.ok(ApiResponse.ok(project));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<ProjectDto>>> getAllProjects() {
-        log.debug("GET /api/projects");
+        log.debug("GET /api/v1/projects");
         List<ProjectDto> projects = projectService.getAllProjects();
         return ResponseEntity.ok(ApiResponse.ok(projects));
     }
@@ -57,14 +57,14 @@ public class ProjectController {
     public ResponseEntity<ApiResponse<ProjectDto>> updateProject(
             @PathVariable Long id,
             @Valid @RequestBody ProjectDto projectDto) {
-        log.info("PUT /api/projects/{}", id);
+        log.info("PUT /api/v1/projects/{}", id);
         ProjectDto updated = projectService.updateProject(id, projectDto);
         return ResponseEntity.ok(ApiResponse.ok("Project updated successfully", updated));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteProject(@PathVariable Long id) {
-        log.info("DELETE /api/projects/{}", id);
+        log.info("DELETE /api/v1/projects/{}", id);
         projectService.deleteProject(id);
         return ResponseEntity.ok(ApiResponse.ok("Project deleted successfully", null));
     }
@@ -73,7 +73,7 @@ public class ProjectController {
     public ResponseEntity<ApiResponse<ProjectDto>> addEmployee(
             @PathVariable Long projectId,
             @PathVariable Long employeeId) {
-        log.info("POST /api/projects/{}/employees/{}", projectId, employeeId);
+        log.info("POST /api/v1/projects/{}/employees/{}", projectId, employeeId);
         ProjectDto updated = projectService.addEmployeeToProject(projectId, employeeId);
         return ResponseEntity.ok(ApiResponse.ok("Employee added to project successfully", updated));
     }
@@ -82,7 +82,7 @@ public class ProjectController {
     public ResponseEntity<ApiResponse<ProjectDto>> removeEmployee(
             @PathVariable Long projectId,
             @PathVariable Long employeeId) {
-        log.info("DELETE /api/projects/{}/employees/{}", projectId, employeeId);
+        log.info("DELETE /api/v1/projects/{}/employees/{}", projectId, employeeId);
         ProjectDto updated = projectService.removeEmployeeFromProject(projectId, employeeId);
         return ResponseEntity.ok(ApiResponse.ok("Employee removed from project successfully", updated));
     }
@@ -90,7 +90,7 @@ public class ProjectController {
     @GetMapping("/employee/{employeeId}")
     public ResponseEntity<ApiResponse<List<ProjectDto>>> getProjectsByEmployee(
             @PathVariable Long employeeId) {
-        log.debug("GET /api/projects/employee/{}", employeeId);
+        log.debug("GET /api/v1/projects/employee/{}", employeeId);
         List<ProjectDto> projects = projectService.getProjectsByEmployee(employeeId);
         return ResponseEntity.ok(ApiResponse.ok(projects));
     }

@@ -18,6 +18,7 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
@@ -30,6 +31,12 @@ import com.ems.ems.events.DepartmentEvent;
 @EnableKafka
 @ConditionalOnProperty(name = "ems.kafka.enabled", havingValue = "true", matchIfMissing = false)
 public class KafkaConfig {
+
+    // ---------- Topic names ----------
+    // Compile-time constants so @KafkaListener(topics = ...) and producer sends
+    // reference the same string — no drift between producer and consumer.
+    public static final String DEPARTMENT_EVENTS_TOPIC = "ems.department.events.v1";
+    public static final String DEPARTMENT_EVENTS_DLT   = "ems.department.events.v1.DLT";
 
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
@@ -70,7 +77,7 @@ public class KafkaConfig {
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroupId);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false); // manual ack via listener container
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
 
         // Wrap both K & V deserializers so bad records don't kill the consumer
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
@@ -91,10 +98,13 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<String, DepartmentEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory());
-        factory.setConcurrency(3); // number of listener threads per @KafkaListener
+        factory.setConcurrency(3);
 
-        // Retry 3 times with 1s backoff, then log & skip. Swap for DeadLetterPublishingRecoverer
-        // once a DLT is provisioned.
+        // Manual acks - consumer commits only after idempotency check + processing.
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+
+        // Retry 3 times with 1s backoff, then DefaultErrorHandler logs and skips.
+        // Swap for DeadLetterPublishingRecoverer once a DLT is provisioned.
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(new FixedBackOff(1_000L, 3L));
         factory.setCommonErrorHandler(errorHandler);
 

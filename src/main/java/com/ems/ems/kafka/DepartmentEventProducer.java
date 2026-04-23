@@ -9,7 +9,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Component;
 
-import com.ems.ems.configs.KafkaTopicConfig;
+import com.ems.ems.configs.KafkaConfig;
 import com.ems.ems.events.DepartmentEvent;
 
 
@@ -29,7 +29,7 @@ public class DepartmentEventProducer {
         String key = String.valueOf(event.departmentId());
 
         CompletableFuture<SendResult<String, DepartmentEvent>> future =
-                kafkaTemplate.send(KafkaTopicConfig.DEPARTMENT_EVENTS_TOPIC, key, event);
+                kafkaTemplate.send(KafkaConfig.DEPARTMENT_EVENTS_TOPIC, key, event);
 
         future.whenComplete((result, ex) -> {
             if (ex != null) {

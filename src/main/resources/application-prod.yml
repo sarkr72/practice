@@ -1,0 +1,53 @@
+###############################################################################
+# PROD profile - runs in EKS prod cluster.
+# Stricter than dev: INFO logging only, larger connection pool, no SQL logging.
+###############################################################################
+
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:ems}?useSSL=true&serverTimezone=UTC&requireSSL=true
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      validation-timeout: 5000
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: true
+      timeout: 2s
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: ems-department-consumer-prod
+    properties:
+      security.protocol: SASL_SSL
+      sasl.mechanism: AWS_MSK_IAM
+      sasl.jaas.config: software.amazon.msk.auth.iam.IAMLoginModule required;
+      sasl.client.callback.handler.class: software.amazon.msk.auth.iam.IAMClientCallbackHandler
+
+  session:
+    store-type: redis
+    timeout: 30m
+
+ems:
+  kafka:
+    enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.ems.ems: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
