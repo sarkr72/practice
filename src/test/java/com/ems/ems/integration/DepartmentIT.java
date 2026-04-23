@@ -20,14 +20,13 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.ems.ems.dtos.DepartmentDto;
 import com.ems.ems.repositories.DepartmentRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import org.testcontainers.containers.MariaDBContainer;
 /**
  * Integration test - boots the full Spring context against a real MySQL container.
  * Matches the *IT.java Failsafe pattern used in Jenkinsfile's "Integration Tests" stage.
@@ -43,10 +42,13 @@ class DepartmentIT {
 
     @Container
     @ServiceConnection
-    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+    static final MariaDBContainer<?> db = new MariaDBContainer<>("mariadb:11.4")
             .withDatabaseName("ems")
             .withUsername("ems")
-            .withPassword("ems");
+            .withPassword("ems")
+            .withStartupTimeout(java.time.Duration.ofMinutes(3))
+            .withLogConsumer(new org.testcontainers.containers.output.Slf4jLogConsumer(
+                    org.slf4j.LoggerFactory.getLogger("db-tc")));
 
     @DynamicPropertySource
     static void overrides(DynamicPropertyRegistry registry) {

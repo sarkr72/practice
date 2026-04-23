@@ -2,6 +2,7 @@ package com.ems.ems.configs;
 
 import java.time.Duration;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,8 +31,9 @@ import lombok.extern.slf4j.Slf4j;
  * requires JavaTimeModule to be registered on the Jackson mapper; the default
  * GenericJackson2JsonRedisSerializer constructor does NOT include it.
  *
- * Default typing is enabled in polymorphic-safe mode (allow-list of packages)
- * so @Cacheable returns concrete types after a round trip.
+ * Each @Bean is gated on RedisConnectionFactory actually existing. If Redis
+ * auto-config is excluded (e.g. in the 'it' profile) these beans silently
+ * don't load, instead of failing context startup.
  */
 @Slf4j
 @Configuration
@@ -60,6 +62,7 @@ public class RedisConfig {
     }
 
     @Bean
+    @ConditionalOnBean(RedisConnectionFactory.class)
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
         GenericJackson2JsonRedisSerializer serializer = jsonSerializer();
 
@@ -74,6 +77,7 @@ public class RedisConfig {
     }
 
     @Bean
+    @ConditionalOnBean(RedisConnectionFactory.class)
     public CacheManager cacheManager(RedisConnectionFactory connectionFactory) {
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofMinutes(30))

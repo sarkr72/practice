@@ -1,5 +1,5 @@
 # Integration test profile. Used by *IT.java via @ActiveProfiles("it").
-# The MySQL datasource is supplied by Testcontainers @ServiceConnection;
+# The MariaDB datasource is supplied by Testcontainers @ServiceConnection;
 # no datasource URL needed here.
 
 spring:
@@ -28,11 +28,23 @@ ems:
   kafka:
     enabled: false
 
+# Override the readiness group from application.yml — drop 'redis' because
+# RedisAutoConfiguration is excluded in this profile, so no redis health
+# indicator exists. Including it by name would fail validation at startup.
 management:
   endpoints:
     web:
       exposure:
         include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
 
 logging:
   level:

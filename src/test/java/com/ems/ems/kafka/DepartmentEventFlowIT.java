@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -24,7 +25,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.containers.MariaDBContainer;
+import org.testcontainers.containers.output.Slf4jLogConsumer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -36,9 +38,10 @@ import com.ems.ems.events.EventType;
  * End-to-end Kafka flow test.
  *
  * Runs a full Spring context with:
- *   - MySQL  : Testcontainers @ServiceConnection
- *   - Redis  : Testcontainers (GenericContainer on port 6379)
- *   - Kafka  : @EmbeddedKafka in-process broker
+ *   - MariaDB : Testcontainers @ServiceConnection (wire-compatible with MySQL,
+ *               boots in ~5s vs MySQL 8's ~2min on Docker Desktop)
+ *   - Redis   : Testcontainers (GenericContainer on port 6379)
+ *   - Kafka   : @EmbeddedKafka in-process broker
  *
  * Verifies:
  *   1. Producer -> topic round-trip: a published DepartmentEvent is consumed.
@@ -61,10 +64,12 @@ class DepartmentEventFlowIT {
 
     @Container
     @ServiceConnection
-    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+    static final MariaDBContainer<?> db = new MariaDBContainer<>("mariadb:11.4")
             .withDatabaseName("ems")
             .withUsername("ems")
-            .withPassword("ems");
+            .withPassword("ems")
+            .withStartupTimeout(Duration.ofMinutes(3))
+            .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("db-tc")));
 
     @Container
     static final GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine")

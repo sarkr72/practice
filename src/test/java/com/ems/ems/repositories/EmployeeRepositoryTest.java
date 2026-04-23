@@ -80,7 +80,7 @@ class EmployeeRepositoryTest {
     @Test
     @DisplayName("search by first or last name is case-insensitive and partial")
     void search_isCaseInsensitivePartial() {
-        employeeRepository.saveAndFlush(newEmployee("Jonathan", "Smith", "jsmith@ems.com"));
+        employeeRepository.saveAndFlush(newEmployee("Johnny", "Smith", "jsmith@ems.com"));
         employeeRepository.saveAndFlush(newEmployee("Alice", "Johnson", "ajohnson@ems.com"));
 
         List<Employee> results = employeeRepository

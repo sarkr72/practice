@@ -12,6 +12,10 @@ spring:
     name: ems
   profiles:
     default: local
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
   # Jackson: ISO-8601 dates, never write as numeric timestamps
   jackson:

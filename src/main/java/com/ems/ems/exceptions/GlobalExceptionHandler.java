@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -132,5 +133,21 @@ public class GlobalExceptionHandler {
         log.error("Unexpected error [{}]", correlationId, ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error("Internal server error. Reference: " + correlationId));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMediaTypeNotSupported(
+            HttpMediaTypeNotSupportedException ex) {
+        log.warn("Unsupported media type: {}", ex.getContentType());
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(ApiResponse.error("Unsupported media type: " + ex.getContentType()));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNotAcceptable(
+            HttpMediaTypeNotAcceptableException ex) {
+        log.warn("Not acceptable: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE)
+                .body(ApiResponse.error("Not acceptable"));
     }
 }

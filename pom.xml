@@ -100,10 +100,20 @@
 		</dependency>
 
 		<!-- ===== DB + MIGRATIONS ===== -->
+		<!-- Production runtime driver — talks to real MySQL RDS in dev/prod.
+		     ALSO works against MariaDB in tests because MariaDB speaks the MySQL wire protocol. -->
 		<dependency>
 			<groupId>com.mysql</groupId>
 			<artifactId>mysql-connector-j</artifactId>
 			<scope>runtime</scope>
+		</dependency>
+
+		<!-- MariaDB JDBC driver — needed at test time so Testcontainers @ServiceConnection
+		     can wire the jdbc:mariadb://... URL for MariaDBContainer. Test scope only. -->
+		<dependency>
+			<groupId>org.mariadb.jdbc</groupId>
+			<artifactId>mariadb-java-client</artifactId>
+			<scope>test</scope>
 		</dependency>
 
 		<!-- Flyway (you have Flyway migrations; MySQL 8+ needs the mysql module) -->
@@ -160,9 +170,11 @@
 			<artifactId>junit-jupiter</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Swapped from mysql to mariadb: MariaDB starts in ~5s vs MySQL 8's ~2min
+		     on Docker Desktop. Wire-protocol compatible; schema runs unchanged. -->
 		<dependency>
 			<groupId>org.testcontainers</groupId>
-			<artifactId>mysql</artifactId>
+			<artifactId>mariadb</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
