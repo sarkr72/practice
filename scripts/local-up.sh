@@ -26,7 +26,7 @@ done
 
 echo ""
 echo "==> Stack ready!"
-echo "    MySQL    : localhost:3306  (user: ems, password: ems, db: ems)"
+echo "    MySQL    : localhost:3307  (user: ems, password: ems, db: ems)"
 echo "    Redis    : localhost:6379"
 echo "    Kafka    : localhost:9092"
 echo "    Kafka UI : http://localhost:8090"

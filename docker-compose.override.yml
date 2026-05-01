@@ -1,3 +1,18 @@
+# ---------------------------------------------------------------------------
+# Override that ALSO runs the prod app image alongside the compose backing
+# services. Picked up automatically by `docker compose up`.
+#
+# This is NOT a fast inner-loop dev override — it builds the multi-stage prod
+# Dockerfile (~3 min cold). Its purpose is to catch image-level breakage
+# (entrypoint, UID, JVM flags) locally before pushing to CI.
+#
+# For the fast dev loop, use:
+#   ./scripts/local-up.sh
+#   ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+#
+# To skip running the app and just bring up MySQL/Redis/Kafka:
+#   docker compose -f docker-compose.yml up -d
+# ---------------------------------------------------------------------------
 services:
   app:
     build:
@@ -13,6 +28,8 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      # Inside the compose network the app talks to mysql:3306 directly,
+      # NOT to the host port (3307) that's exposed for the host JVM.
       SPRING_PROFILES_ACTIVE: local
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ems?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
       SPRING_DATA_REDIS_HOST: redis

@@ -50,23 +50,26 @@ LABEL org.opencontainers.image.title="ems" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.source="https://github.com/ems/ems" \
+      org.opencontainers.image.source="https://bitbucket.example.internal/projects/PLATFORM/repos/ems" \
       org.opencontainers.image.vendor="EMS Platform Team" \
       com.ems.app-id="${APP_ID}" \
       com.ems.lob="${LOB}"
 
 # Copy Spring Boot layers — most -> least cache-friendly order.
 # dependencies/snapshot-dependencies rarely change; application changes every build.
-# --chown=1000:1000 sets ownership up-front (distroless has no chown binary at runtime).
+# --chown=65532:65532 matches the 'nonroot' user baked into the distroless base.
+# (Distroless docs: gcr.io/distroless/*:nonroot is UID 65532.) Don't change to
+# UID 1000 unless you also switch to a base image that has that UID.
 ARG EXTRACTED=/workspace/target/extracted
-COPY --from=build --chown=1000:1000 ${EXTRACTED}/dependencies/          ./
-COPY --from=build --chown=1000:1000 ${EXTRACTED}/spring-boot-loader/    ./
-COPY --from=build --chown=1000:1000 ${EXTRACTED}/snapshot-dependencies/ ./
-COPY --from=build --chown=1000:1000 ${EXTRACTED}/application/           ./
+COPY --from=build --chown=65532:65532 ${EXTRACTED}/dependencies/          ./
+COPY --from=build --chown=65532:65532 ${EXTRACTED}/spring-boot-loader/    ./
+COPY --from=build --chown=65532:65532 ${EXTRACTED}/snapshot-dependencies/ ./
+COPY --from=build --chown=65532:65532 ${EXTRACTED}/application/           ./
 
-# Numeric UID — stable across base image versions, works with restrictive
-# Pod Security Standards that reject 'runAsUser: anyUID'.
-USER 1000
+# Distroless 'nonroot' = UID 65532. Numeric form (vs 'nonroot') stays valid even
+# if the base image's user database changes; works under restrictive Pod Security
+# Standards that reject 'runAsUser: anyUID'.
+USER 65532
 
 EXPOSE 8080
 

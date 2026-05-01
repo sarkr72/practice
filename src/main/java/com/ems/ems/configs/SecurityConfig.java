@@ -49,6 +49,7 @@ public class SecurityConfig {
                         ).permitAll()
                         // Temporarily open until auth is wired up:
                         .requestMatchers("/api/**").permitAll()
+                        .requestMatchers("/test/**").permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(basic -> {})     // dev fallback; remove once JWT is in place
                 .formLogin(form -> form.disable());

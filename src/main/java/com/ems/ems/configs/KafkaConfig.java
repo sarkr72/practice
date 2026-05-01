@@ -9,6 +9,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
@@ -18,95 +19,131 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
-import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
-import org.springframework.util.backoff.FixedBackOff;
 
 import com.ems.ems.events.DepartmentEvent;
 
+/**
+ * Producer/consumer factories. Topic provisioning lives in KafkaTopicsConfig,
+ * error handling/DLT in KafkaErrorHandlingConfig. Single Responsibility — easier
+ * to override per-profile and easier to review.
+ */
 @Configuration
 @EnableKafka
+@EnableConfigurationProperties(KafkaProperties.class)
 @ConditionalOnProperty(name = "ems.kafka.enabled", havingValue = "true", matchIfMissing = false)
 public class KafkaConfig {
-
-    // ---------- Topic names ----------
-    // Compile-time constants so @KafkaListener(topics = ...) and producer sends
-    // reference the same string — no drift between producer and consumer.
-    public static final String DEPARTMENT_EVENTS_TOPIC = "ems.department.events.v1";
-    public static final String DEPARTMENT_EVENTS_DLT   = "ems.department.events.v1.DLT";
 
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
-    @Value("${spring.kafka.consumer.group-id:ems-department-consumer}")
-    private String consumerGroupId;
+    private final KafkaProperties props;
+
+    public KafkaConfig(KafkaProperties props) {
+        this.props = props;
+    }
 
     // ---------- Producer ----------
 
     @Bean
     public ProducerFactory<String, DepartmentEvent> producerFactory() {
-        Map<String, Object> props = new HashMap<>();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        Map<String, Object> p = new HashMap<>();
+        p.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        p.put(ProducerConfig.CLIENT_ID_CONFIG, props.producer().clientId());
+        p.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        p.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
 
-        // Durability + ordering guarantees
-        props.put(ProducerConfig.ACKS_CONFIG, "all");
-        props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
-        props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
-        props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
-        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 120_000);
-        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 30_000);
+        // Durability + ordering
+        p.put(ProducerConfig.ACKS_CONFIG, "all");
+        p.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+        p.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
+        p.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
 
-        return new DefaultKafkaProducerFactory<>(props);
+        // Throughput
+        p.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, props.producer().compressionType());
+        p.put(ProducerConfig.LINGER_MS_CONFIG, props.producer().lingerMs());
+        p.put(ProducerConfig.BATCH_SIZE_CONFIG, props.producer().batchSize());
+
+        // Timeouts
+        p.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, (int) props.producer().deliveryTimeout().toMillis());
+        p.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, (int) props.producer().requestTimeout().toMillis());
+
+        // JsonSerializer: don't add type headers — keeps the wire format clean and
+        // decouples consumer from producer's exact class name.
+        p.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
+
+        return new DefaultKafkaProducerFactory<>(p);
     }
 
     @Bean
-    public KafkaTemplate<String, DepartmentEvent> kafkaTemplate() {
-        return new KafkaTemplate<>(producerFactory());
+    public KafkaTemplate<String, DepartmentEvent> kafkaTemplate(
+            ProducerFactory<String, DepartmentEvent> pf) {
+        KafkaTemplate<String, DepartmentEvent> tpl = new KafkaTemplate<>(pf);
+        tpl.setObservationEnabled(true);  // Micrometer + tracing propagation
+        return tpl;
+    }
+
+    /**
+     * Generic template for the DLT recoverer — sends Object so it can publish
+     * any failed record (including DeserializationException-wrapped raw bytes).
+     */
+    @Bean
+    public KafkaTemplate<String, Object> dltKafkaTemplate(ProducerFactory<String, ?> pf) {
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        ProducerFactory<String, Object> cast = (ProducerFactory) pf;
+        return new KafkaTemplate<>(cast);
     }
 
     // ---------- Consumer ----------
 
     @Bean
     public ConsumerFactory<String, DepartmentEvent> consumerFactory() {
-        Map<String, Object> props = new HashMap<>();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroupId);
-        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        Map<String, Object> p = new HashMap<>();
+        p.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        p.put(ConsumerConfig.CLIENT_ID_CONFIG, props.consumer().clientId());
+        p.put(ConsumerConfig.GROUP_ID_CONFIG, props.consumer().groupId());
+        p.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, props.consumer().autoOffsetReset());
+        p.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        p.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, props.consumer().isolationLevel());
 
-        // Wrap both K & V deserializers so bad records don't kill the consumer
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
-        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
+        // Polling/session — these prevent rebalance storms under load.
+        p.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, props.consumer().maxPollRecords());
+        p.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, (int) props.consumer().maxPollInterval().toMillis());
+        p.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, (int) props.consumer().sessionTimeout().toMillis());
+        p.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, (int) props.consumer().heartbeatInterval().toMillis());
 
-        // JsonDeserializer safety: only trust our event package
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "com.ems.ems.events");
-        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, DepartmentEvent.class.getName());
-        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+        // Wrap deserializers so a poison pill doesn't kill the consumer.
+        p.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        p.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        p.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
+        p.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
 
-        return new DefaultKafkaConsumerFactory<>(props);
+        p.put(JsonDeserializer.TRUSTED_PACKAGES, "com.ems.ems.events");
+        p.put(JsonDeserializer.VALUE_DEFAULT_TYPE, DepartmentEvent.class.getName());
+        p.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+
+        return new DefaultKafkaConsumerFactory<>(p);
     }
 
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, DepartmentEvent> kafkaListenerContainerFactory() {
+    public ConcurrentKafkaListenerContainerFactory<String, DepartmentEvent>
+            kafkaListenerContainerFactory(
+                    ConsumerFactory<String, DepartmentEvent> cf,
+                    CommonErrorHandler errorHandler) {
+
         ConcurrentKafkaListenerContainerFactory<String, DepartmentEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
-        factory.setConsumerFactory(consumerFactory());
-        factory.setConcurrency(3);
-
-        // Manual acks - consumer commits only after idempotency check + processing.
-        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
-
-        // Retry 3 times with 1s backoff, then DefaultErrorHandler logs and skips.
-        // Swap for DeadLetterPublishingRecoverer once a DLT is provisioned.
-        DefaultErrorHandler errorHandler = new DefaultErrorHandler(new FixedBackOff(1_000L, 3L));
+        factory.setConsumerFactory(cf);
+        factory.setConcurrency(props.consumer().concurrency());
         factory.setCommonErrorHandler(errorHandler);
+
+        ContainerProperties cp = factory.getContainerProperties();
+        cp.setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        cp.setObservationEnabled(true);  // tracing + Micrometer
 
         return factory;
     }

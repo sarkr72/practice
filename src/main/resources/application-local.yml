@@ -5,7 +5,8 @@
 
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/ems?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    # Compose maps 3307:3306 so port 3306 stays free if a host MySQL is installed.
+    url: jdbc:mysql://localhost:3307/ems?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
     username: ems
     password: ems
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -15,6 +16,13 @@ spring:
       connection-timeout: 20000
       idle-timeout: 300000
       max-lifetime: 1800000
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+    cache:
+      type: simple
 
   jpa:
     show-sql: true
@@ -28,10 +36,9 @@ spring:
       port: 6379
       timeout: 2s
 
+  # Just the connection point — all consumer/producer tuning lives under ems.kafka
   kafka:
     bootstrap-servers: localhost:9092
-    consumer:
-      group-id: ems-department-consumer-local
 
   session:
     store-type: redis
@@ -40,6 +47,13 @@ spring:
 ems:
   kafka:
     enabled: true
+    consumer:
+      group-id: ems-department-consumer-local
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0              # 100% sampling locally for full trace visibility
 
 logging:
   level:

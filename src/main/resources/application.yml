@@ -82,14 +82,48 @@ management:
   metrics:
     tags:
       application: ems
+  tracing:
+    sampling:
+      probability: 0.1              # 10% default; profiles override
   info:
     env:
       enabled: true
 
-# Custom toggles
+###############################################################################
+# Custom application config - binds to KafkaProperties (@ConfigurationProperties)
+# Common defaults; profiles override env-specific bits (group-id, durability).
+###############################################################################
 ems:
   kafka:
-    enabled: false                  # profiles turn this on
+    enabled: true                  # profiles turn this on
+    topics:
+      partitions: 3
+      replication-factor: 1         # OVERRIDDEN to 3 in dev/prod (MSK is multi-AZ)
+      min-insync-replicas: 1        # OVERRIDDEN to 2 in dev/prod
+      retention: 7d
+      dlt-retention: 30d            # DLT keeps records longer for triage
+    producer:
+      client-id: ems-department-producer
+      compression-type: zstd        # best ratio; switch to lz4 if CPU-bound
+      linger-ms: 10                 # small wait to batch records
+      batch-size: 32768             # 32 KB
+      delivery-timeout: 2m
+      request-timeout: 30s
+    consumer:
+      client-id: ems-department-consumer
+      group-id: ems-department-consumer   # OVERRIDDEN per profile
+      concurrency: 3                # match topic partition count
+      max-poll-records: 100
+      max-poll-interval: 5m         # max time between polls before rebalance
+      session-timeout: 45s
+      heartbeat-interval: 15s       # ~1/3 of session-timeout
+      auto-offset-reset: earliest
+      isolation-level: read_committed   # only see committed txn messages
+    retry:
+      max-attempts: 5
+      initial-interval: 1s
+      multiplier: 2.0               # 1s, 2s, 4s, 8s, 16s
+      max-interval: 30s
 
 # Logging - structured JSON in prod via logback-spring.xml
 logging:

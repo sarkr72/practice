@@ -1,0 +1,291 @@
+{
+  "_comment": [
+    "Spinnaker pipeline-as-JSON for the EMS app.",
+    "Import via: spin pipeline save --file spinnaker/pipelines/ems-deploy-cicd.json",
+    "Or paste into Spinnaker UI: Applications > ems > Pipelines > Configure > Edit as JSON.",
+    "",
+    "Trigger: webhook from Jenkins. Jenkins POSTs to:",
+    "  $SPINNAKER_BASE_URL/webhooks/webhook/ems-build-complete",
+    "with JSON parameters { imageTag, branch, appId, buildUrl }.",
+    "",
+    "Flow:",
+    "  Webhook -> Find ECR Image -> Deploy Dev -> Smoke Dev",
+    "         -> [Manual Judgment if branch=main]",
+    "         -> Deploy Prod (canary 25% -> 100%) -> Smoke Prod",
+    "",
+    "Replace ACCOUNT_ID, kubernetes accounts (kube-dev, kube-prod), and Slack",
+    "channel before importing."
+  ],
+
+  "application": "ems",
+  "name": "ems-deploy-cicd",
+  "keepWaitingPipelines": false,
+  "limitConcurrent": true,
+
+  "parameterConfig": [
+    { "name": "imageTag", "required": true,  "description": "ECR image tag built by Jenkins" },
+    { "name": "branch",   "required": true,  "description": "Source branch (develop or main)" },
+    { "name": "appId",    "required": false, "default": "APP-EMS-UNASSIGNED" },
+    { "name": "buildUrl", "required": false, "description": "Link back to Jenkins build" }
+  ],
+
+  "triggers": [
+    {
+      "enabled": true,
+      "type": "webhook",
+      "source": "ems-build-complete",
+      "payloadConstraints": {}
+    }
+  ],
+
+  "notifications": [
+    {
+      "address": "#ems-releases",
+      "level": "pipeline",
+      "type": "slack",
+      "when": ["pipeline.complete", "pipeline.failed"]
+    }
+  ],
+
+  "stages": [
+    {
+      "refId": "1",
+      "name": "Find Image in ECR",
+      "type": "findImageFromTags",
+      "cloudProvider": "aws",
+      "credentials": "aws-prod",
+      "regions": ["us-east-1"],
+      "imageNamePattern": "image-uploader",
+      "tags": { "tag": "${parameters.imageTag}" }
+    },
+
+    {
+      "refId": "2",
+      "requisiteStageRefIds": ["1"],
+      "name": "Deploy to Dev",
+      "type": "deployManifest",
+      "cloudProvider": "kubernetes",
+      "account": "kube-dev",
+      "namespaceOverride": "ems-dev",
+      "source": "text",
+      "manifests": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": { "name": "ems", "namespace": "ems-dev" },
+          "spec": {
+            "replicas": 2,
+            "selector": { "matchLabels": { "app": "ems" } },
+            "template": {
+              "metadata": { "labels": { "app": "ems" } },
+              "spec": {
+                "containers": [{
+                  "name": "ems",
+                  "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/image-uploader:${parameters.imageTag}",
+                  "ports": [{ "containerPort": 8080 }],
+                  "env": [
+                    { "name": "SPRING_PROFILES_ACTIVE", "value": "dev" }
+                  ],
+                  "readinessProbe": {
+                    "httpGet": { "path": "/actuator/health/readiness", "port": 8080 },
+                    "initialDelaySeconds": 20,
+                    "periodSeconds": 10
+                  },
+                  "livenessProbe": {
+                    "httpGet": { "path": "/actuator/health/liveness", "port": 8080 },
+                    "initialDelaySeconds": 60,
+                    "periodSeconds": 30
+                  }
+                }]
+              }
+            }
+          }
+        }
+      ],
+      "trafficManagement": { "enabled": false }
+    },
+
+    {
+      "refId": "3",
+      "requisiteStageRefIds": ["2"],
+      "name": "Smoke Test Dev",
+      "type": "webhook",
+      "method": "GET",
+      "url": "https://ems-dev.example.internal/actuator/health",
+      "expectedArtifacts": [],
+      "statusUrlResolution": "getMethod",
+      "waitForCompletion": true,
+      "failOnFailedExpressions": true,
+      "customHeaders": {},
+      "successStatuses": "200"
+    },
+
+    {
+      "refId": "4",
+      "requisiteStageRefIds": ["3"],
+      "name": "Manual Judgment (Prod Approval)",
+      "type": "manualJudgment",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "judgmentInputs": [
+        { "value": "Promote to prod" },
+        { "value": "Hold" }
+      ],
+      "instructions": "Review dev smoke test results and approve prod deploy.\n\nJenkins build: ${parameters.buildUrl}\nImage tag: ${parameters.imageTag}",
+      "notifications": [
+        {
+          "address": "#ems-releases",
+          "level": "stage",
+          "type": "slack",
+          "when": ["manualJudgment"]
+        }
+      ],
+      "failPipeline": true
+    },
+
+    {
+      "refId": "5",
+      "requisiteStageRefIds": ["4"],
+      "name": "Deploy Canary (25%)",
+      "type": "deployManifest",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main' && #judgment('Manual Judgment (Prod Approval)') == 'Promote to prod'}"
+      },
+      "cloudProvider": "kubernetes",
+      "account": "kube-prod",
+      "namespaceOverride": "ems-prod",
+      "source": "text",
+      "manifests": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": { "name": "ems-canary", "namespace": "ems-prod" },
+          "spec": {
+            "replicas": 1,
+            "selector": { "matchLabels": { "app": "ems", "track": "canary" } },
+            "template": {
+              "metadata": { "labels": { "app": "ems", "track": "canary" } },
+              "spec": {
+                "containers": [{
+                  "name": "ems",
+                  "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/image-uploader:${parameters.imageTag}",
+                  "ports": [{ "containerPort": 8080 }],
+                  "env": [
+                    { "name": "SPRING_PROFILES_ACTIVE", "value": "prod" }
+                  ],
+                  "readinessProbe": {
+                    "httpGet": { "path": "/actuator/health/readiness", "port": 8080 },
+                    "initialDelaySeconds": 30,
+                    "periodSeconds": 10
+                  }
+                }]
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "refId": "6",
+      "requisiteStageRefIds": ["5"],
+      "name": "Bake Canary (10 min)",
+      "type": "wait",
+      "waitTime": 600,
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      }
+    },
+
+    {
+      "refId": "7",
+      "requisiteStageRefIds": ["6"],
+      "name": "Promote to Prod (100%)",
+      "type": "deployManifest",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "cloudProvider": "kubernetes",
+      "account": "kube-prod",
+      "namespaceOverride": "ems-prod",
+      "source": "text",
+      "manifests": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": { "name": "ems", "namespace": "ems-prod" },
+          "spec": {
+            "replicas": 4,
+            "selector": { "matchLabels": { "app": "ems", "track": "stable" } },
+            "template": {
+              "metadata": { "labels": { "app": "ems", "track": "stable" } },
+              "spec": {
+                "containers": [{
+                  "name": "ems",
+                  "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/image-uploader:${parameters.imageTag}",
+                  "ports": [{ "containerPort": 8080 }],
+                  "env": [
+                    { "name": "SPRING_PROFILES_ACTIVE", "value": "prod" }
+                  ],
+                  "readinessProbe": {
+                    "httpGet": { "path": "/actuator/health/readiness", "port": 8080 },
+                    "initialDelaySeconds": 30,
+                    "periodSeconds": 10
+                  },
+                  "livenessProbe": {
+                    "httpGet": { "path": "/actuator/health/liveness", "port": 8080 },
+                    "initialDelaySeconds": 60,
+                    "periodSeconds": 30
+                  }
+                }]
+              }
+            }
+          }
+        }
+      ],
+      "trafficManagement": {
+        "enabled": true,
+        "options": {
+          "enableTraffic": true,
+          "services": ["service ems"]
+        }
+      }
+    },
+
+    {
+      "refId": "8",
+      "requisiteStageRefIds": ["7"],
+      "name": "Delete Canary",
+      "type": "deleteManifest",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "cloudProvider": "kubernetes",
+      "account": "kube-prod",
+      "location": "ems-prod",
+      "manifestName": "deployment ems-canary",
+      "kinds": ["deployment"]
+    },
+
+    {
+      "refId": "9",
+      "requisiteStageRefIds": ["7"],
+      "name": "Smoke Test Prod",
+      "type": "webhook",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "method": "GET",
+      "url": "https://ems.example.com/actuator/health",
+      "waitForCompletion": true,
+      "successStatuses": "200"
+    }
+  ]
+}

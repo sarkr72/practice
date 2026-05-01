@@ -13,6 +13,7 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
+import com.ems.ems.configs.KafkaTopicsConfig;
 import com.ems.ems.events.DepartmentEvent;
 
 @Component
@@ -29,9 +30,11 @@ public class DepartmentEventConsumer {
         this.redisTemplate = redisTemplate;
     }
 
+    // FIX: was hardcoded "ems.department.events" — didn't match producer's ".v1" topic.
+    // Reference the constant so producer/consumer can never drift again.
     @KafkaListener(
-            topics = "ems.department.events",
-            groupId = "${spring.kafka.consumer.group-id:ems-department-consumer}",
+            topics = KafkaTopicsConfig.DEPARTMENT_EVENTS_TOPIC,
+            groupId = "${ems.kafka.consumer.group-id}",
             containerFactory = "kafkaListenerContainerFactory"
     )
     public void consume(@Payload DepartmentEvent event,
@@ -57,14 +60,13 @@ public class DepartmentEventConsumer {
         } catch (Exception ex) {
             // Roll back the idempotency marker so a retry can actually reprocess.
             redisTemplate.delete(idempotencyKey);
-            log.error("Failed to process eventId={} — will retry", event.eventId(), ex);
-            throw ex; // DefaultErrorHandler takes it from here
+            log.error("Failed to process eventId={} — error handler will retry/DLT",
+                    event.eventId(), ex);
+            throw ex;
         }
     }
 
     private void process(DepartmentEvent event) {
-        // Placeholder. Real consumers would: update a read model, push to a search index,
-        // emit an outbound webhook, record to an audit log, etc.
         log.info("Processing eventId={} type={} departmentId={} name={}",
                 event.eventId(), event.eventType(), event.departmentId(), event.name());
     }

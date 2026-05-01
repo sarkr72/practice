@@ -1,6 +1,7 @@
 ###############################################################################
 # PROD profile - runs in EKS prod cluster.
-# Stricter than dev: INFO logging only, larger connection pool, no SQL logging.
+# Stricter than dev: WARN logging, larger connection pool, no SQL logging,
+# 10% trace sampling.
 ###############################################################################
 
 spring:
@@ -29,8 +30,6 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
-    consumer:
-      group-id: ems-department-consumer-prod
     properties:
       security.protocol: SASL_SSL
       sasl.mechanism: AWS_MSK_IAM
@@ -44,6 +43,16 @@ spring:
 ems:
   kafka:
     enabled: true
+    topics:
+      replication-factor: 3
+      min-insync-replicas: 2
+    consumer:
+      group-id: ems-department-consumer-prod
+
+management:
+  tracing:
+    sampling:
+      probability: 0.1              # 10% — adjust based on traffic volume + cost
 
 logging:
   level:

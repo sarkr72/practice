@@ -1,7 +1,7 @@
 ###############################################################################
-# DEV profile - runs in EKS dev cluster.
-# All sensitive values come from ExternalSecret (DB_USERNAME, DB_PASSWORD,
-# REDIS_PASSWORD). All endpoints come from ems-config ConfigMap.
+# DEV profile - runs on Fargate dev cluster.
+# All sensitive values come from Secrets Manager (DB_PASSWORD).
+# All endpoints come from the ECS task definition env (DB_HOST, DB_USERNAME, etc.).
 ###############################################################################
 
 spring:
@@ -18,33 +18,38 @@ spring:
       max-lifetime: 1800000
       leak-detection-threshold: 60000
 
-  data:
-    redis:
-      host: ${REDIS_HOST}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      ssl:
-        enabled: ${REDIS_SSL_ENABLED:true}
-      timeout: 2s
+  # Redis is not provisioned in this terraform stack. Disable autoconfig so
+  # Spring doesn't fail readiness on a missing Redis. Add Redis back here once
+  # you provision ElastiCache.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
 
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
-    consumer:
-      group-id: ems-department-consumer-dev
-    # MSK IAM auth - the container needs AWS_REGION and the pod needs an IRSA role
-    properties:
-      security.protocol: SASL_SSL
-      sasl.mechanism: AWS_MSK_IAM
-      sasl.jaas.config: software.amazon.msk.auth.iam.IAMLoginModule required;
-      sasl.client.callback.handler.class: software.amazon.msk.auth.iam.IAMClientCallbackHandler
+  cache:
+    type: simple
 
-  session:
-    store-type: redis
-    timeout: 30m
+  # Kafka is not provisioned in this terraform stack. ems.kafka.enabled=false
+  # below disables KafkaConfig via @ConditionalOnProperty so the app starts
+  # without MSK. Add MSK back here once you provision it.
 
 ems:
   kafka:
-    enabled: true
+    enabled: false
+    consumer:
+      group-id: ems-department-consumer-dev
+
+# Override the global readiness probe (which includes db,redis) so it doesn't
+# fail on missing Redis. DB readiness is still checked.
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,db
+  tracing:
+    sampling:
+      probability: 1.0              # full sampling in dev — volume is low
 
 logging:
   level:
