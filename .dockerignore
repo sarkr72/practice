@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.vscode
+target/
+!target/*.jar
+**/*.log
+**/.DS_Store
+docs/
+terraform/
+k8s/
+scripts/
+Jenkinsfile
+README.md
+docker-compose*.yml

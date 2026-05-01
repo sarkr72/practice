@@ -1,11 +1,10 @@
 package com.ems.ems.serviceImpl;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
@@ -22,12 +21,13 @@ import com.ems.ems.repositories.ProjectRepository;
 import com.ems.ems.services.ProjectService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ProjectServiceImpl implements ProjectService {
-
-    private static final Logger log = LoggerFactory.getLogger(ProjectServiceImpl.class);
 
     private final ProjectRepository projectRepository;
     private final EmployeeRepository employeeRepository;
@@ -48,11 +48,10 @@ public class ProjectServiceImpl implements ProjectService {
         project.setStatus(dto.getStatus());
 
         if (dto.getEmployeeIds() != null && !dto.getEmployeeIds().isEmpty()) {
-            Set<Employee> employees = dto.getEmployeeIds().stream()
-                    .map(empId -> employeeRepository.findById(empId)
-                            .orElseThrow(() -> new ResourceNotFoundException("Employee", "id", empId)))
-                    .collect(Collectors.toSet());
-            project.setEmployees(employees);
+            Set<Employee> employees = resolveEmployees(dto.getEmployeeIds());
+            // On a fresh entity the collection is already an empty HashSet from the field
+            // initializer; addAll is safe here.
+            project.getEmployees().addAll(employees);
         }
 
         Project saved = projectRepository.save(project);
@@ -98,11 +97,12 @@ public class ProjectServiceImpl implements ProjectService {
         project.setStatus(dto.getStatus());
 
         if (dto.getEmployeeIds() != null) {
-            Set<Employee> employees = dto.getEmployeeIds().stream()
-                    .map(empId -> employeeRepository.findById(empId)
-                            .orElseThrow(() -> new ResourceNotFoundException("Employee", "id", empId)))
-                    .collect(Collectors.toSet());
-            project.setEmployees(employees);
+            // IMPORTANT: mutate Hibernate's managed collection instead of replacing it.
+            // Replacing with setEmployees(newSet) breaks the PersistentSet proxy and
+            // throws "A collection with orphanRemoval was no longer referenced" variants.
+            Set<Employee> target = resolveEmployees(dto.getEmployeeIds());
+            project.getEmployees().clear();
+            project.getEmployees().addAll(target);
         }
 
         Project updated = projectRepository.save(project);
@@ -159,6 +159,18 @@ public class ProjectServiceImpl implements ProjectService {
                 .stream()
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
+    }
+
+    // ---- helpers ----
+
+    private Set<Employee> resolveEmployees(Set<Long> employeeIds) {
+        Set<Employee> out = new HashSet<>();
+        for (Long empId : employeeIds) {
+            Employee e = employeeRepository.findById(empId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Employee", "id", empId));
+            out.add(e);
+        }
+        return out;
     }
 
     private ProjectDto mapToDto(Project p) {

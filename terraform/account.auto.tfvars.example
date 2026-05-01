@@ -1,0 +1,4 @@
+# Copy this file to `account.auto.tfvars` (gitignored) and replace with your
+# real 12-digit AWS account ID, OR export `TF_VAR_aws_account_id` in your
+# shell. Either way works — terraform picks the value up automatically.
+aws_account_id = "REPLACE_WITH_YOUR_12_DIGIT_AWS_ACCOUNT_ID"

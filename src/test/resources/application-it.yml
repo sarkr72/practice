@@ -1,0 +1,52 @@
+# Integration test profile. Used by *IT.java via @ActiveProfiles("it").
+# The MariaDB datasource is supplied by Testcontainers @ServiceConnection;
+# no datasource URL needed here.
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+
+  # Prevent @SpringBootTest from trying to connect to Redis/Kafka.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+      - org.springframework.boot.autoconfigure.session.SessionAutoConfiguration
+
+  session:
+    store-type: none
+  batch:
+    job:
+      enabled: false
+
+ems:
+  kafka:
+    enabled: false
+
+# Override the readiness group from application.yml — drop 'redis' because
+# RedisAutoConfiguration is excluded in this profile, so no redis health
+# indicator exists. Including it by name would fail validation at startup.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
+
+logging:
+  level:
+    com.ems.ems: INFO
+    org.testcontainers: INFO

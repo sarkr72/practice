@@ -18,74 +18,398 @@
 
 	<properties>
 		<java.version>21</java.version>
+		<testcontainers.version>1.20.4</testcontainers.version>
+		<jib.version>3.4.4</jib.version>
+		<git-commit-id.version>9.0.1</git-commit-id.version>
+		<dependency-check.version>10.0.4</dependency-check.version>
+		<jacoco.version>0.8.12</jacoco.version>
+		<jacoco.coverage.minimum>0.70</jacoco.coverage.minimum>
+		<!-- Default: unit tests always run. Set -DskipUnitTests=true to skip them
+		     (Jenkinsfile uses this in the Integration Tests stage). -->
+		<skipUnitTests>false</skipUnitTests>
 	</properties>
+
+	<!-- Import Testcontainers BOM so every TC module uses the same version -->
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 
 	<dependencies>
 
-		<!-- CORE -->
+		<!-- ===== CORE ===== -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
-
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-jpa</artifactId>
 		</dependency>
-
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
 
+		<!-- ===== ENTERPRISE FEATURES ===== -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-batch</artifactId>
 		</dependency>
-
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-cache</artifactId>
 		</dependency>
-
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-redis</artifactId>
 		</dependency>
 
-		<!-- DB -->
+		<!-- Redis-backed HTTP sessions -->
+		<dependency>
+			<groupId>org.springframework.session</groupId>
+			<artifactId>spring-session-data-redis</artifactId>
+		</dependency>
+
+		<!-- Kafka -->
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka</artifactId>
+		</dependency>
+
+		<!-- @Retryable support (for RetryConfig) -->
+		<dependency>
+			<groupId>org.springframework.retry</groupId>
+			<artifactId>spring-retry</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-aspects</artifactId>
+		</dependency>
+
+		<!-- Actuator for health/metrics (enterprise must-have) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+
+		<!-- OpenAPI / Swagger UI -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>2.6.0</version>
+		</dependency>
+
+		<!-- ===== DB + MIGRATIONS =====
+		     Production runtime driver — talks to real MySQL RDS in dev/prod.
+		     ALSO works against MariaDB in tests (wire-protocol compatible). -->
 		<dependency>
 			<groupId>com.mysql</groupId>
 			<artifactId>mysql-connector-j</artifactId>
 			<scope>runtime</scope>
 		</dependency>
 
+		<!-- MariaDB JDBC driver — needed at test time so @ServiceConnection
+		     can wire jdbc:mariadb://... URLs for MariaDBContainer. Test scope only. -->
 		<dependency>
-			<groupId>com.h2database</groupId>
-			<artifactId>h2</artifactId>
+			<groupId>org.mariadb.jdbc</groupId>
+			<artifactId>mariadb-java-client</artifactId>
 			<scope>test</scope>
 		</dependency>
 
-		<!-- LOMBOK -->
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-mysql</artifactId>
+		</dependency>
+
+		<!-- ===== UTILITIES ===== -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
-
-		<!-- JACKSON -->
 		<dependency>
 			<groupId>com.fasterxml.jackson.datatype</groupId>
 			<artifactId>jackson-datatype-jsr310</artifactId>
 		</dependency>
 
-		<!-- TEST -->
+		<!-- Security -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+
+		<!-- ===== TEST ===== -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.awaitility</groupId>
+			<artifactId>awaitility</artifactId>
+			<scope>test</scope>
+		</dependency>
 
+		<!-- Testcontainers (versions come from BOM) -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Swapped from mysql to mariadb: MariaDB starts in ~5s vs MySQL 8's ~2min
+		     on Docker Desktop. Wire-protocol compatible; schema runs unchanged. -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>mariadb</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>kafka</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- Spring Boot 3.1+ Testcontainers auto-config (@ServiceConnection etc.) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<exclude>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+						</exclude>
+					</excludes>
+				</configuration>
+			</plugin>
+
+			<!--
+			  Surefire owns unit + slice tests (*Test.java, *Tests.java).
+			  Explicitly exclude *IT.java so they only run in the verify phase via Failsafe.
+			  -DskipUnitTests=true is the escape hatch used by Jenkinsfile's Integration Tests stage.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<skipTests>${skipUnitTests}</skipTests>
+					<excludes>
+						<exclude>**/*IT.java</exclude>
+					</excludes>
+					<argLine>-Xmx1g -XX:+UseG1GC</argLine>
+				</configuration>
+			</plugin>
+
+			<!--
+			  Failsafe owns integration tests (*IT.java).
+			  Bound to integration-test + verify phases so `./mvnw verify` runs them.
+			  Jenkinsfile reads target/failsafe-reports/*.xml after this stage.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>integration-tests</id>
+						<goals>
+							<goal>integration-test</goal>
+							<goal>verify</goal>
+						</goals>
+					</execution>
+				</executions>
+				<configuration>
+					<includes>
+						<include>**/*IT.java</include>
+					</includes>
+					<argLine>-Xmx2g -XX:+UseG1GC</argLine>
+				</configuration>
+			</plugin>
+
+			<!--
+			  ===== Jib =====
+			  Containerless image builder. Talks directly to ECR — no Docker daemon
+			  required on the build agent. Jenkinsfile invokes it as:
+			    mvn compile com.google.cloud.tools:jib-maven-plugin:build \
+			      -Dimage=$ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG \
+			      -Djib.to.auth.username=AWS \
+			      -Djib.to.auth.password=$(aws ecr get-login-password ...)
+			-->
+			<plugin>
+				<groupId>com.google.cloud.tools</groupId>
+				<artifactId>jib-maven-plugin</artifactId>
+				<version>${jib.version}</version>
+				<configuration>
+					<from>
+						<image>gcr.io/distroless/java21-debian12:nonroot</image>
+					</from>
+					<to>
+						<!-- Override on the CLI (-Dimage=...) per build. -->
+						<image>image-uploader</image>
+					</to>
+					<container>
+						<ports>
+							<port>8080</port>
+						</ports>
+						<user>65532:65532</user>
+						<jvmFlags>
+							<jvmFlag>-XX:MaxRAMPercentage=75.0</jvmFlag>
+							<jvmFlag>-XX:+UseZGC</jvmFlag>
+							<jvmFlag>-XX:+ExitOnOutOfMemoryError</jvmFlag>
+							<jvmFlag>-Djava.security.egd=file:/dev/./urandom</jvmFlag>
+						</jvmFlags>
+						<labels>
+							<org.opencontainers.image.title>${project.artifactId}</org.opencontainers.image.title>
+							<org.opencontainers.image.description>Employee Management System</org.opencontainers.image.description>
+							<org.opencontainers.image.version>${project.version}</org.opencontainers.image.version>
+							<org.opencontainers.image.source>https://bitbucket.example.internal/projects/PLATFORM/repos/ems</org.opencontainers.image.source>
+							<org.opencontainers.image.vendor>EMS Platform Team</org.opencontainers.image.vendor>
+							<!-- These are filled by git-commit-id-maven-plugin below -->
+							<org.opencontainers.image.revision>${git.commit.id.full}</org.opencontainers.image.revision>
+							<org.opencontainers.image.created>${git.commit.time}</org.opencontainers.image.created>
+						</labels>
+						<!--
+						  Reproducible builds: tie creationTime to the git commit, NOT
+						  wall-clock time. Two builds of the same commit produce byte-
+						  identical image manifests/digests. USE_CURRENT_TIMESTAMP
+						  would change the digest every run.
+						-->
+						<creationTime>${git.commit.time}</creationTime>
+						<filesModificationTime>EPOCH_PLUS_SECOND</filesModificationTime>
+					</container>
+				</configuration>
+				<!-- Don't bind to package phase — we invoke jib:build explicitly from
+				     the Jenkinsfile so the local `./mvnw package` stays fast. -->
+			</plugin>
+
+			<!--
+			  ===== git-commit-id =====
+			  Exposes ${git.commit.id.full}, ${git.commit.id.abbrev}, ${git.build.time},
+			  etc. for Jib labels and the actuator /info endpoint.
+			-->
+			<plugin>
+				<groupId>io.github.git-commit-id</groupId>
+				<artifactId>git-commit-id-maven-plugin</artifactId>
+				<version>${git-commit-id.version}</version>
+				<executions>
+					<execution>
+						<id>get-the-git-infos</id>
+						<goals>
+							<goal>revision</goal>
+						</goals>
+						<phase>initialize</phase>
+					</execution>
+				</executions>
+				<configuration>
+					<failOnNoGitDirectory>false</failOnNoGitDirectory>
+					<failOnUnableToExtractRepoInfo>false</failOnUnableToExtractRepoInfo>
+					<dateFormat>yyyy-MM-dd'T'HH:mm:ssZ</dateFormat>
+					<dateFormatTimeZone>UTC</dateFormatTimeZone>
+				</configuration>
+			</plugin>
+
+			<!--
+			  ===== OWASP Dependency-Check =====
+			  Wired so the Jenkinsfile SCA stage can call `mvn dependency-check:check`.
+			  Skipped on local builds; only runs when explicitly invoked.
+			-->
+			<plugin>
+				<groupId>org.owasp</groupId>
+				<artifactId>dependency-check-maven</artifactId>
+				<version>${dependency-check.version}</version>
+				<configuration>
+					<failBuildOnCVSS>7</failBuildOnCVSS>
+					<skipTestScope>true</skipTestScope>
+					<format>HTML</format>
+					<suppressionFiles>
+						<suppressionFile>.dependency-check-suppressions.xml</suppressionFile>
+					</suppressionFiles>
+				</configuration>
+			</plugin>
+
+			<!--
+			  ===== JaCoCo =====
+			  Generates target/jacoco.exec for the Jenkinsfile to publish, and
+			  enforces the line-coverage threshold declared in jules.yml.
+			  The 'check' execution fails the build when coverage drops below
+			  ${jacoco.coverage.minimum} (line ratio).
+
+			  jules.yml is the source of truth for the threshold value; bump
+			  jacoco.coverage.minimum here AND test.unit.coverage-threshold there
+			  together so the pipeline-as-config and the build agree.
+			-->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals><goal>prepare-agent</goal></goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals><goal>report</goal></goals>
+					</execution>
+					<execution>
+						<id>check-coverage</id>
+						<phase>verify</phase>
+						<goals><goal>check</goal></goals>
+						<configuration>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>LINE</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${jacoco.coverage.minimum}</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+							<haltOnFailure>true</haltOnFailure>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
 
 </project>

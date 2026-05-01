@@ -1,0 +1,360 @@
+{
+  "_comment": [
+    "Spinnaker pipeline-as-JSON for the EMS app on ECS Fargate.",
+    "Import via: spin pipeline save --file spinnaker/pipelines/ems-deploy-cicd.json",
+    "",
+    "Trigger: webhook from Jenkins after Jib pushes to ECR.",
+    "Parameters: imageTag, branch, appId, buildUrl, ecrRegistry, ecrRepo.",
+    "",
+    "Flow:",
+    "  Webhook -> Deploy Dev (redblack) -> Smoke Dev",
+    "         -> [Manual Judgment if branch=main]",
+    "         -> Deploy Prod Canary (1 task, canary target group)",
+    "         -> Bake 10 min",
+    "         -> Deploy Prod Stable (redblack, stable target group)",
+    "         -> Destroy Canary",
+    "         -> Smoke Prod",
+    "",
+    "Strategy: redblack. Spinnaker creates a new ECS server group (e.g., ems-dev-v001),",
+    "waits for healthy target registration, then disables and destroys the previous one.",
+    "maxRemainingAsgs=2 keeps one prior version around for fast rollback.",
+    "",
+    "Required Spinnaker setup (one-time):",
+    "  - Register ECS accounts 'aws-dev' and 'aws-prod' in clouddriver.",
+    "  - Register subnet attribute 'ecs-tasks' for each VPC (clouddriver.ecs.subnetTypes).",
+    "  - Register security group, IAM roles, target groups discovered via terraform outputs."
+  ],
+
+  "application": "ems",
+  "name": "ems-deploy-cicd",
+  "keepWaitingPipelines": false,
+  "limitConcurrent": true,
+
+  "parameterConfig": [
+    { "name": "imageTag",    "required": true,  "description": "ECR image tag built by Jenkins" },
+    { "name": "branch",      "required": true,  "description": "Source branch (develop or main)" },
+    { "name": "appId",       "required": false, "default": "APP-EMS-UNASSIGNED" },
+    { "name": "buildUrl",    "required": false, "description": "Link back to Jenkins build" },
+    { "name": "ecrRegistry", "required": true,  "description": "<account>.dkr.ecr.<region>.amazonaws.com" },
+    { "name": "ecrRepo",     "required": false, "default": "image-uploader" }
+  ],
+
+  "triggers": [
+    {
+      "enabled": true,
+      "type": "webhook",
+      "source": "ems-build-complete",
+      "payloadConstraints": {}
+    }
+  ],
+
+  "notifications": [
+    {
+      "address": "#ems-releases",
+      "level": "pipeline",
+      "type": "slack",
+      "when": ["pipeline.complete", "pipeline.failed"]
+    }
+  ],
+
+  "stages": [
+    {
+      "refId": "1",
+      "name": "Deploy to Dev",
+      "type": "createServerGroup",
+      "cloudProvider": "ecs",
+      "credentials": "aws-dev",
+      "region": "us-east-1",
+      "application": "ems",
+      "stack": "dev",
+      "ecsClusterName": "image-uploader-dev",
+      "launchType": "FARGATE",
+      "platformVersion": "LATEST",
+      "computeUnits": 512,
+      "reservedMemory": 1024,
+      "containerInformation": {
+        "imageDescription": {
+          "imageId":    "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "registry":   "${parameters.ecrRegistry}",
+          "repository": "${parameters.ecrRepo}",
+          "tag":        "${parameters.imageTag}"
+        }
+      },
+      "containerPort": 8080,
+      "targetGroupMappings": [
+        {
+          "containerName": "ems",
+          "containerPort": 8080,
+          "targetGroup":   "image-uploader-dev-stable"
+        }
+      ],
+      "networkMode": "awsvpc",
+      "subnetType":  "ecs-tasks-dev",
+      "securityGroups": ["image-uploader-dev-tasks"],
+      "associatePublicIpAddress": true,
+      "iamRole":              "image-uploader-dev-task",
+      "taskRoleArn":          "image-uploader-dev-task",
+      "taskDefinitionArtifact": null,
+      "containerDefinitions": [
+        {
+          "name":      "ems",
+          "image":     "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "essential": true,
+          "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+          "environment": [
+            { "name": "SPRING_PROFILES_ACTIVE", "value": "dev" },
+            { "name": "APP_ID",                 "value": "${parameters.appId}" }
+          ],
+          "secrets": [
+            { "name": "DB_HOST",     "valueFrom": "/dev/image-uploader/DB_HOST" },
+            { "name": "DB_PORT",     "valueFrom": "/dev/image-uploader/DB_PORT" },
+            { "name": "DB_NAME",     "valueFrom": "/dev/image-uploader/DB_NAME" },
+            { "name": "DB_USERNAME", "valueFrom": "/dev/image-uploader/DB_USERNAME" },
+            { "name": "DB_PASSWORD", "valueFrom": "/dev/image-uploader/DB_PASSWORD" }
+          ],
+          "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+              "awslogs-group":         "/ecs/image-uploader-dev",
+              "awslogs-region":        "us-east-1",
+              "awslogs-stream-prefix": "ecs"
+            }
+          }
+        }
+      ],
+      "capacity": { "min": 1, "max": 3, "desired": 2 },
+      "strategy":          "redblack",
+      "maxRemainingAsgs":  2,
+      "rollback":          { "onFailure": true },
+      "scaleDown":         true
+    },
+
+    {
+      "refId": "2",
+      "requisiteStageRefIds": ["1"],
+      "name": "Smoke Test Dev",
+      "type": "webhook",
+      "method": "GET",
+      "url": "https://ems-dev.example.internal/actuator/health",
+      "waitForCompletion": true,
+      "failOnFailedExpressions": true,
+      "successStatuses": "200"
+    },
+
+    {
+      "refId": "3",
+      "requisiteStageRefIds": ["2"],
+      "name": "Manual Judgment (Prod Approval)",
+      "type": "manualJudgment",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "judgmentInputs": [
+        { "value": "Promote to prod" },
+        { "value": "Hold" }
+      ],
+      "instructions": "Review dev smoke test results and approve prod deploy.\n\nJenkins build: ${parameters.buildUrl}\nImage tag: ${parameters.imageTag}",
+      "notifications": [
+        {
+          "address": "#ems-releases",
+          "level":   "stage",
+          "type":    "slack",
+          "when":    ["manualJudgment"]
+        }
+      ],
+      "failPipeline": true
+    },
+
+    {
+      "refId": "4",
+      "requisiteStageRefIds": ["3"],
+      "name": "Deploy Prod Canary",
+      "type": "createServerGroup",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main' && #judgment('Manual Judgment (Prod Approval)') == 'Promote to prod'}"
+      },
+      "cloudProvider": "ecs",
+      "credentials": "aws-prod",
+      "region": "us-east-1",
+      "application": "ems",
+      "stack": "prod",
+      "freeFormDetails": "canary",
+      "ecsClusterName": "image-uploader-prod",
+      "launchType": "FARGATE",
+      "platformVersion": "LATEST",
+      "computeUnits": 512,
+      "reservedMemory": 1024,
+      "containerInformation": {
+        "imageDescription": {
+          "imageId":    "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "registry":   "${parameters.ecrRegistry}",
+          "repository": "${parameters.ecrRepo}",
+          "tag":        "${parameters.imageTag}"
+        }
+      },
+      "containerPort": 8080,
+      "targetGroupMappings": [
+        {
+          "containerName": "ems",
+          "containerPort": 8080,
+          "targetGroup":   "image-uploader-prod-canary"
+        }
+      ],
+      "networkMode": "awsvpc",
+      "subnetType":  "ecs-tasks-prod",
+      "securityGroups": ["image-uploader-prod-tasks"],
+      "associatePublicIpAddress": true,
+      "iamRole":     "image-uploader-prod-task",
+      "containerDefinitions": [
+        {
+          "name":      "ems",
+          "image":     "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "essential": true,
+          "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+          "environment": [
+            { "name": "SPRING_PROFILES_ACTIVE", "value": "prod" },
+            { "name": "APP_ID",                 "value": "${parameters.appId}" }
+          ],
+          "secrets": [
+            { "name": "DB_HOST",     "valueFrom": "/prod/image-uploader/DB_HOST" },
+            { "name": "DB_PORT",     "valueFrom": "/prod/image-uploader/DB_PORT" },
+            { "name": "DB_NAME",     "valueFrom": "/prod/image-uploader/DB_NAME" },
+            { "name": "DB_USERNAME", "valueFrom": "/prod/image-uploader/DB_USERNAME" },
+            { "name": "DB_PASSWORD", "valueFrom": "/prod/image-uploader/DB_PASSWORD" },
+            { "name": "JWT_SECRET",  "valueFrom": "/prod/image-uploader/JWT_SECRET" }
+          ],
+          "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+              "awslogs-group":         "/ecs/image-uploader-prod",
+              "awslogs-region":        "us-east-1",
+              "awslogs-stream-prefix": "canary"
+            }
+          }
+        }
+      ],
+      "capacity": { "min": 1, "max": 1, "desired": 1 },
+      "strategy": ""
+    },
+
+    {
+      "refId": "5",
+      "requisiteStageRefIds": ["4"],
+      "name": "Bake Canary (10 min)",
+      "type": "wait",
+      "waitTime": 600,
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      }
+    },
+
+    {
+      "refId": "6",
+      "requisiteStageRefIds": ["5"],
+      "name": "Deploy Prod Stable",
+      "type": "createServerGroup",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "cloudProvider": "ecs",
+      "credentials": "aws-prod",
+      "region": "us-east-1",
+      "application": "ems",
+      "stack": "prod",
+      "ecsClusterName": "image-uploader-prod",
+      "launchType": "FARGATE",
+      "platformVersion": "LATEST",
+      "computeUnits": 512,
+      "reservedMemory": 1024,
+      "containerInformation": {
+        "imageDescription": {
+          "imageId":    "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "registry":   "${parameters.ecrRegistry}",
+          "repository": "${parameters.ecrRepo}",
+          "tag":        "${parameters.imageTag}"
+        }
+      },
+      "containerPort": 8080,
+      "targetGroupMappings": [
+        {
+          "containerName": "ems",
+          "containerPort": 8080,
+          "targetGroup":   "image-uploader-prod-stable"
+        }
+      ],
+      "networkMode": "awsvpc",
+      "subnetType":  "ecs-tasks-prod",
+      "securityGroups": ["image-uploader-prod-tasks"],
+      "associatePublicIpAddress": true,
+      "iamRole":     "image-uploader-prod-task",
+      "containerDefinitions": [
+        {
+          "name":      "ems",
+          "image":     "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "essential": true,
+          "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+          "environment": [
+            { "name": "SPRING_PROFILES_ACTIVE", "value": "prod" },
+            { "name": "APP_ID",                 "value": "${parameters.appId}" }
+          ],
+          "secrets": [
+            { "name": "DB_HOST",     "valueFrom": "/prod/image-uploader/DB_HOST" },
+            { "name": "DB_PORT",     "valueFrom": "/prod/image-uploader/DB_PORT" },
+            { "name": "DB_NAME",     "valueFrom": "/prod/image-uploader/DB_NAME" },
+            { "name": "DB_USERNAME", "valueFrom": "/prod/image-uploader/DB_USERNAME" },
+            { "name": "DB_PASSWORD", "valueFrom": "/prod/image-uploader/DB_PASSWORD" },
+            { "name": "JWT_SECRET",  "valueFrom": "/prod/image-uploader/JWT_SECRET" }
+          ],
+          "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+              "awslogs-group":         "/ecs/image-uploader-prod",
+              "awslogs-region":        "us-east-1",
+              "awslogs-stream-prefix": "stable"
+            }
+          }
+        }
+      ],
+      "capacity":         { "min": 2, "max": 6, "desired": 4 },
+      "strategy":         "redblack",
+      "maxRemainingAsgs": 2,
+      "rollback":         { "onFailure": true },
+      "scaleDown":        true
+    },
+
+    {
+      "refId": "7",
+      "requisiteStageRefIds": ["6"],
+      "name": "Destroy Canary",
+      "type": "destroyServerGroup",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "cloudProvider": "ecs",
+      "credentials": "aws-prod",
+      "regions": ["us-east-1"],
+      "cluster": "ems-prod-canary",
+      "target":  "current_asg"
+    },
+
+    {
+      "refId": "8",
+      "requisiteStageRefIds": ["6"],
+      "name": "Smoke Test Prod",
+      "type": "webhook",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "method": "GET",
+      "url": "https://ems.example.com/actuator/health",
+      "waitForCompletion": true,
+      "successStatuses": "200"
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+asyncapi: 3.0.0
+info:
+  title: EMS Department Events API
+  version: 1.0.0
+  description: |
+    Event-driven contract for the Department aggregate of the Employee Management System.
+    Publishers SHOULD emit one event per state transition (CREATED, UPDATED, DELETED).
+    Consumers MUST be idempotent — events MAY be redelivered.
+  contact:
+    name: EMS Platform Team
+  license:
+    name: Apache 2.0
+
+servers:
+  local:
+    host: localhost:9092
+    protocol: kafka
+    description: Local Kind cluster
+  dev:
+    host: kafka.dev.example.com:9098
+    protocol: kafka-secure
+    description: Dev MSK cluster (SASL_SSL + AWS_MSK_IAM)
+  prod:
+    host: kafka.prod.example.com:9098
+    protocol: kafka-secure
+    description: Prod MSK cluster (SASL_SSL + AWS_MSK_IAM)
+
+channels:
+  departmentEvents:
+    address: ems.department.events.v1
+    title: Department lifecycle events
+    description: Published whenever a Department aggregate changes state.
+    messages:
+      DepartmentEvent:
+        $ref: '#/components/messages/DepartmentEvent'
+    bindings:
+      kafka:
+        topic: ems.department.events.v1
+        partitions: 3
+        replicas: 3
+        topicConfiguration:
+          cleanup.policy: ['delete']
+          retention.ms: 604800000      # 7 days
+          min.insync.replicas: 2
+
+  departmentEventsDlt:
+    address: ems.department.events.v1.DLT
+    title: Department events — Dead Letter Topic
+    description: Records that exhausted retries or failed non-retryable validation.
+    messages:
+      DepartmentEvent:
+        $ref: '#/components/messages/DepartmentEvent'
+
+operations:
+  publishDepartmentEvent:
+    action: send
+    channel:
+      $ref: '#/channels/departmentEvents'
+    summary: Publish a department lifecycle event
+    messages:
+      - $ref: '#/channels/departmentEvents/messages/DepartmentEvent'
+
+  consumeDepartmentEvent:
+    action: receive
+    channel:
+      $ref: '#/channels/departmentEvents'
+    summary: Consume department lifecycle events
+    messages:
+      - $ref: '#/channels/departmentEvents/messages/DepartmentEvent'
+
+components:
+  messages:
+    DepartmentEvent:
+      name: DepartmentEvent
+      title: Department lifecycle event
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DepartmentEvent'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: departmentId — guarantees ordering per department.
+
+  schemas:
+    DepartmentEvent:
+      type: object
+      required: [eventId, eventType, occurredAt, departmentId]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Unique event identifier — use for consumer-side idempotency.
+        eventType:
+          type: string
+          enum: [CREATED, UPDATED, DELETED]
+        occurredAt:
+          type: string
+          format: date-time
+          description: ISO-8601 instant when the event was produced.
+        departmentId:
+          type: integer
+          format: int64
+        name:
+          type: string
+          description: Null on DELETED events.
+        description:
+          type: string
+          description: Null on DELETED events.
+        version:
+          type: integer
+          format: int64
+          description: Optimistic-locking version. Null on DELETED events.

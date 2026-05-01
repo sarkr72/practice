@@ -1,0 +1,57 @@
+###############################################################################
+# DEV profile - runs on Fargate dev cluster.
+# All sensitive values come from Secrets Manager (DB_PASSWORD).
+# All endpoints come from the ECS task definition env (DB_HOST, DB_USERNAME, etc.).
+###############################################################################
+
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:ems}?useSSL=true&serverTimezone=UTC
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+
+  # Redis is not provisioned in this terraform stack. Disable autoconfig so
+  # Spring doesn't fail readiness on a missing Redis. Add Redis back here once
+  # you provision ElastiCache.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+  cache:
+    type: simple
+
+  # Kafka is not provisioned in this terraform stack. ems.kafka.enabled=false
+  # below disables KafkaConfig via @ConditionalOnProperty so the app starts
+  # without MSK. Add MSK back here once you provision it.
+
+ems:
+  kafka:
+    enabled: false
+    consumer:
+      group-id: ems-department-consumer-dev
+
+# Override the global readiness probe (which includes db,redis) so it doesn't
+# fail on missing Redis. DB readiness is still checked.
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,db
+  tracing:
+    sampling:
+      probability: 1.0              # full sampling in dev — volume is low
+
+logging:
+  level:
+    root: INFO
+    com.ems.ems: DEBUG

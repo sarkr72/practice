@@ -1,29 +1,17 @@
 package com.ems.ems.entities;
 
-import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
 import java.util.HashSet;
 import java.util.Set;
-
-import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -33,32 +21,33 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
-public class Employee implements Serializable {
+public class Employee extends BaseEntity {
 
-    private static final long serialVersionUID = 1L;
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(nullable = false)
+    @Column(name = "first_name", nullable = false, length = 100)
     private String firstName;
 
-    @Column(nullable = false)
+    @Column(name = "last_name", nullable = false, length = 100)
     private String lastName;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 255)
     private String email;
 
+    @Column(length = 32)
     private String phone;
 
+    @Column(name = "job_title", length = 100)
     private String jobTitle;
 
-    private Double salary;
+    // BigDecimal for money. Double loses precision on .10 + .20 style math.
+    // precision=19, scale=2 matches the DECIMAL(19,2) column in V1.
+    @Column(precision = 19, scale = 2)
+    private BigDecimal salary;
 
+    @Column(name = "hire_date")
     private LocalDate hireDate;
 
-    private Boolean active;
+    @Column(nullable = false)
+    private Boolean active = Boolean.TRUE;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "department_id")
@@ -66,11 +55,4 @@ public class Employee implements Serializable {
 
     @ManyToMany(mappedBy = "employees", fetch = FetchType.LAZY)
     private Set<Project> projects = new HashSet<>();
-
-    @CreationTimestamp
-    @Column(updatable = false)
-    private LocalDateTime createdAt;
-
-    @UpdateTimestamp
-    private LocalDateTime updatedAt;
 }

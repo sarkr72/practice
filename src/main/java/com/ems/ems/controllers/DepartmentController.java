@@ -19,9 +19,11 @@ import com.ems.ems.services.DepartmentService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @RestController
-@RequestMapping("/api/departments")
+@RequestMapping("/api/v1/departments")
 @RequiredArgsConstructor
 public class DepartmentController {
 
@@ -30,6 +32,7 @@ public class DepartmentController {
     @PostMapping
     public ResponseEntity<ApiResponse<DepartmentDto>> createDepartment(
             @Valid @RequestBody DepartmentDto departmentDto) {
+        log.info("POST /api/v1/departments - name: {}", departmentDto.getName());
         DepartmentDto created = departmentService.createDepartment(departmentDto);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -38,12 +41,14 @@ public class DepartmentController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<DepartmentDto>> getDepartment(@PathVariable Long id) {
+        log.debug("GET /api/v1/departments/{}", id);
         DepartmentDto department = departmentService.getDepartmentById(id);
         return ResponseEntity.ok(ApiResponse.ok(department));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<DepartmentDto>>> getAllDepartments() {
+        log.debug("GET /api/v1/departments");
         List<DepartmentDto> departments = departmentService.getAllDepartments();
         return ResponseEntity.ok(ApiResponse.ok(departments));
     }
@@ -52,14 +57,15 @@ public class DepartmentController {
     public ResponseEntity<ApiResponse<DepartmentDto>> updateDepartment(
             @PathVariable Long id,
             @Valid @RequestBody DepartmentDto departmentDto) {
+        log.info("PUT /api/v1/departments/{}", id);
         DepartmentDto updated = departmentService.updateDepartment(id, departmentDto);
         return ResponseEntity.ok(ApiResponse.ok("Department updated successfully", updated));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteDepartment(@PathVariable Long id) {
+        log.info("DELETE /api/v1/departments/{}", id);
         departmentService.deleteDepartment(id);
         return ResponseEntity.ok(ApiResponse.ok("Department deleted successfully", null));
     }
-
 }
