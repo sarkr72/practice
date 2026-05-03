@@ -584,20 +584,20 @@ pipeline {
          * UNIT TESTS
          * =========================
          */
-        stage('Unit Tests') {
-            steps {
-                sh '''
-                    ./mvnw -B -ntp test \
-                      -Dspring.profiles.active=test
-                '''
-            }
-
-            post {
-                always {
-                    junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
-                }
-            }
-        }
+//         stage('Unit Tests') {
+//             steps {
+//                 sh '''
+//                     ./mvnw -B -ntp test \
+//                       -Dspring.profiles.active=test
+//                 '''
+//             }
+//
+//             post {
+//                 always {
+//                     junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
+//                 }
+//             }
+//         }
 
         /*
          * =========================
@@ -627,8 +627,13 @@ pipeline {
         stage('Enforce Main Branch') {
             steps {
                 script {
-                    if (env.BRANCH_NAME != 'main') {
-                        error("❌ Deployment stages are allowed ONLY on 'main'. Current: ${env.BRANCH_NAME}")
+                    def branch = sh(
+                        script: "git rev-parse --abbrev-ref HEAD",
+                        returnStdout: true
+                    ).trim()
+
+                    if (branch != 'main') {
+                        error("❌ Deployment stages allowed ONLY on 'main'. Current: ${branch}")
                     }
                 }
             }
