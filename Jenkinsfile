@@ -36,7 +36,8 @@
 // @Library('jules-shared-lib') _
 
 pipeline {
-    agent { label 'docker && linux' }
+//     agent { label 'docker && linux' }
+       agent any
 
     options {
         timestamps()
