@@ -105,7 +105,7 @@ deploy:
   pipeline: spinnaker
   platform: ecs-fargate
   spinnaker:
-    base-url: http://spinnaker.local
+    base-url: http://host.docker.internal
     application: ems
     pipeline-name: ems-deploy-cicd
     webhook-source: ems-build-complete
