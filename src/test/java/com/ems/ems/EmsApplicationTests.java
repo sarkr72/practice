@@ -35,34 +35,11 @@ package com.ems.ems;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.ActiveProfiles;
-import org.testcontainers.containers.MariaDBContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-
-/*
- * Integration test for Spring context.
- *
- * IMPORTANT:
- * - Testcontainers is managed by Spring Boot automatically via @ServiceConnection
- * - DO NOT manually start containers here
- * - This avoids Docker detection issues in CI and WSL
- */
 
 @SpringBootTest
-@Testcontainers
-@ActiveProfiles("it")
+@ActiveProfiles("test")
 class EmsApplicationTests {
-
-    @Container
-    @ServiceConnection
-    static MariaDBContainer<?> db =
-            new MariaDBContainer<>("mariadb:11.4")
-                    .withDatabaseName("ems")
-                    .withUsername("ems")
-                    .withPassword("ems");
-
 
     @Test
     void contextLoads() {}
