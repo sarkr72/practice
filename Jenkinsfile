@@ -864,8 +864,8 @@ pipeline {
                     sh '''
                         ./mvnw -B -ntp -DskipTests \
                           org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
-                          -Dsonar.projectKey=ems \
-                          -Dsonar.organization=sarkr72 \
+                          -Dsonar.projectKey=sarkr72 \
+                          -Dsonar.organization=rinku sarkar \
                           -Dsonar.host.url=https://sonarcloud.io \
                           -Dsonar.projectVersion=${BUILD_NUMBER} \
                           -Dsonar.login=$SONAR_TOKEN
