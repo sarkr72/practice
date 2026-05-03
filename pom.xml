@@ -8,7 +8,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.3.11</version>
+		<version>3.5.14</version>
 		<relativePath/>
 	</parent>
 
@@ -28,6 +28,9 @@
 
 		<git.commit.id>unknown</git.commit.id>
 		<git.commit.time>1970-01-01T00:00:00Z</git.commit.time>
+
+		<tomcat.version>10.1.53</tomcat.version>
+		<spring-security.version>6.5.9</spring-security.version>
 	</properties>
 
 	<dependencyManagement>
