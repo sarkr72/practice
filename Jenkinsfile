@@ -867,6 +867,7 @@ pipeline {
                           -Dsonar.projectKey=ems \
                           -Dsonar.organization=sarkr72 \
                           -Dsonar.host.url=https://sonarcloud.io \
+                          -Dsonar.projectVersion=${BUILD_NUMBER} \
                           -Dsonar.login=$SONAR_TOKEN
                     '''
                 }
