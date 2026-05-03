@@ -15,11 +15,11 @@ schema-version: "1.0"
 
 application:
   name: ems
-  app-id: APP-EMS-UNASSIGNED         # replace with your real corp app ID
+  app-id: ems-001         # replace with your real corp app ID
   lob: platform-eng                  # line of business / cost center
   team: rinku-team
   contacts:
-    - rinku@example.com
+    - rinkusarkar353@gmail.com
   bitbucket:
     project: PLATFORM
     repo: ems
@@ -105,7 +105,7 @@ deploy:
   pipeline: spinnaker
   platform: ecs-fargate
   spinnaker:
-    base-url: https://spinnaker.example.internal
+    base-url: http://54.210.123.45:8084
     application: ems
     pipeline-name: ems-deploy-cicd
     webhook-source: ems-build-complete

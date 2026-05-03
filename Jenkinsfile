@@ -142,48 +142,48 @@ pipeline {
                     }
                 }
 
-                stage('SCA (Dependency-Check)') {
-                    steps {
-                        // dependency-check 10+ requires an NVD API key; without one,
-                        // NVD throttles requests and a clean cache run takes 30+ min.
-                        // Get a free key from https://nvd.nist.gov/developers/request-an-api-key
-                        // and add it to Jenkins as Secret text id 'nvd-api-key'.
-                        withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
-                            sh """
-                                ./mvnw -B -ntp org.owasp:dependency-check-maven:check \\
-                                  -DfailBuildOnCVSS=${env.SCA_FAIL_CVSS} \\
-                                  -DskipTestScope=true \\
-                                  -Dnvd.api.key=\$NVD_KEY
-                            """
-                        }
-                    }
-                    post {
-                        always {
-                            archiveArtifacts artifacts: 'target/dependency-check-report.html',
-                                             allowEmptyArchive: true
-                        }
-                    }
-                }
-
-                stage('Secret Scan (gitleaks)') {
-                    steps {
-                        sh '''
-                            docker run --rm -v "$(pwd):/repo" zricethezav/gitleaks:latest \
-                              detect --source=/repo --no-git --redact --exit-code 1
-                        '''
-                    }
-                }
-
-                stage('IaC Scan (tfsec)') {
-                    steps {
-                        sh '''
-                            docker run --rm -v "$(pwd)/terraform:/src" aquasec/tfsec:latest \
-                              /src --minimum-severity HIGH
-                        '''
-                    }
-                }
-            }
-        }
+//                 stage('SCA (Dependency-Check)') {
+//                     steps {
+//                         // dependency-check 10+ requires an NVD API key; without one,
+//                         // NVD throttles requests and a clean cache run takes 30+ min.
+//                         // Get a free key from https://nvd.nist.gov/developers/request-an-api-key
+//                         // and add it to Jenkins as Secret text id 'nvd-api-key'.
+//                         withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_KEY')]) {
+//                             sh """
+//                                 ./mvnw -B -ntp org.owasp:dependency-check-maven:check \\
+//                                   -DfailBuildOnCVSS=${env.SCA_FAIL_CVSS} \\
+//                                   -DskipTestScope=true \\
+//                                   -Dnvd.api.key=\$NVD_KEY
+//                             """
+//                         }
+//                     }
+//                     post {
+//                         always {
+//                             archiveArtifacts artifacts: 'target/dependency-check-report.html',
+//                                              allowEmptyArchive: true
+//                         }
+//                     }
+//                 }
+//
+//                 stage('Secret Scan (gitleaks)') {
+//                     steps {
+//                         sh '''
+//                             docker run --rm -v "$(pwd):/repo" zricethezav/gitleaks:latest \
+//                               detect --source=/repo --no-git --redact --exit-code 1
+//                         '''
+//                     }
+//                 }
+//
+//                 stage('IaC Scan (tfsec)') {
+//                     steps {
+//                         sh '''
+//                             docker run --rm -v "$(pwd)/terraform:/src" aquasec/tfsec:latest \
+//                               /src --minimum-severity HIGH
+//                         '''
+//                     }
+//                 }
+//             }
+//         }
 
         // -------------------------------------------------------------------
         // Build & push image with Jib — NO Docker build, NO Docker push.

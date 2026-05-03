@@ -111,7 +111,7 @@ resource "aws_db_instance" "replica" {
   skip_final_snapshot = true
   apply_immediately   = var.env != "prod"
 
-  performance_insights_enabled          = true
+  performance_insights_enabled          = false
   performance_insights_retention_period = 7
 }
 
