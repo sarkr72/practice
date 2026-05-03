@@ -106,9 +106,9 @@ deploy:
   platform: ecs-fargate
   spinnaker:
     base-url: http://host.docker.internal:8084
-    application: ems
-    pipeline-name: ems-deploy-cicd
-    webhook-source: ems-build-complete
+    application: helloapp
+    pipeline-name: Deploy nginx
+    webhook-source: deploy-nginx
   environments:
     - name: dev
       branches: [develop, main]
