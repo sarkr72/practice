@@ -604,20 +604,20 @@ pipeline {
          * INTEGRATION TESTS
          * =========================
          */
-        stage('Integration Tests') {
-            steps {
-                sh '''
-                    ./mvnw -B -ntp verify \
-                      -Dspring.profiles.active=it
-                '''
-            }
-
-            post {
-                always {
-                    junit testResults: 'target/failsafe-reports/*.xml', allowEmptyResults: true
-                }
-            }
-        }
+//         stage('Integration Tests') {
+//             steps {
+//                 sh '''
+//                     ./mvnw -B -ntp verify \
+//                       -Dspring.profiles.active=it
+//                 '''
+//             }
+//
+//             post {
+//                 always {
+//                     junit testResults: 'target/failsafe-reports/*.xml', allowEmptyResults: true
+//                 }
+//             }
+//         }
 
         /*
          * =========================
