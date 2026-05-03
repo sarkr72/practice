@@ -513,9 +513,257 @@
 // }
 
 
-/*
- * EMS pipeline — Jenkinsfile is the Jules pipeline shell.
- */
+// /*
+//  * EMS pipeline — Jenkinsfile is the Jules pipeline shell.
+//  */
+//
+// pipeline {
+//
+//     agent any
+//
+//     options {
+//         timestamps()
+//         ansiColor('xterm')
+//         timeout(time: 45, unit: 'MINUTES')
+//         buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '5'))
+//         disableConcurrentBuilds()
+//     }
+//
+//     environment {
+//         AWS_REGION     = 'us-east-1'
+//         AWS_ACCOUNT_ID = credentials('aws-account-id')
+//         ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+//         MAVEN_OPTS     = '-Dmaven.repo.local=.m2/repository'
+//
+//         CI = 'true'
+//         TESTCONTAINERS_RYUK_DISABLED = 'true'
+//     }
+//
+//     stages {
+//
+//         stage('Init') {
+//             steps {
+//                 checkout scm
+//
+//                 script {
+//                     def jules = readYaml(file: 'jules.yml')
+//
+//                     env.APP_NAME   = jules.application.name
+//                     env.APP_ID     = jules.application['app-id']
+//                     env.LOB        = jules.application.lob
+//                     env.ECR_REPO   = jules.package.registry.repository
+//
+//                     env.GIT_SHA_SHORT = sh(
+//                         script: 'git rev-parse --short HEAD',
+//                         returnStdout: true
+//                     ).trim()
+//
+//                     env.GIT_BRANCH_SAFE = (env.BRANCH_NAME ?: 'local')
+//                         .replaceAll('[^A-Za-z0-9._-]', '-')
+//
+//                     env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_SHA_SHORT}"
+//                     env.IMAGE_URI = "${env.ECR_REGISTRY}/${env.ECR_REPO}:${env.IMAGE_TAG}"
+//
+//                     env.SPINNAKER_BASE_URL = jules.deploy.spinnaker['base-url']
+//                     env.SPINNAKER_APP      = jules.deploy.spinnaker.application
+//                     env.SPINNAKER_SOURCE   = jules.deploy.spinnaker['webhook-source']
+//
+//                     env.TRIVY_SEVERITY = jules.scan.container.severity
+//                 }
+//             }
+//         }
+//
+//         stage('Prepare Maven Wrapper') {
+//             steps {
+//                 sh 'chmod +x mvnw'
+//             }
+//         }
+//
+//         /*
+//          * =========================
+//          * UNIT TESTS
+//          * =========================
+//          */
+// //         stage('Unit Tests') {
+// //             steps {
+// //                 sh '''
+// //                     ./mvnw -B -ntp test \
+// //                       -Dspring.profiles.active=test
+// //                 '''
+// //             }
+// //
+// //             post {
+// //                 always {
+// //                     junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
+// //                 }
+// //             }
+// //         }
+//
+//         /*
+//          * =========================
+//          * INTEGRATION TESTS
+//          * =========================
+//          */
+// //         stage('Integration Tests') {
+// //             steps {
+// //                 sh '''
+// //                     ./mvnw -B -ntp verify \
+// //                       -Dspring.profiles.active=it
+// //                 '''
+// //             }
+// //
+// //             post {
+// //                 always {
+// //                     junit testResults: 'target/failsafe-reports/*.xml', allowEmptyResults: true
+// //                 }
+// //             }
+// //         }
+//
+//         /*
+//          * =========================
+//          * ENFORCE MAIN BRANCH
+//          * =========================
+//          */
+//       stage('Enforce Main Branch') {
+//           steps {
+//               script {
+//                   def branch = env.GIT_BRANCH ?: ""
+//
+//                   // Handles values like: origin/main
+//                   if (!branch.endsWith('/main') && branch != 'main') {
+//                       error("❌ Deployment allowed ONLY on 'main'. Current: ${branch}")
+//                   }
+//               }
+//           }
+//       }
+//
+//         /*
+//          * =========================
+//          * SONAR SCAN
+//          * =========================
+//          */
+//         stage('SAST (Sonar)') {
+//             when {
+//                 expression {
+//                     return env.GIT_BRANCH?.endsWith('/main')
+//                 }
+//             }
+//
+//             steps {
+//                 withSonarQubeEnv('SonarQube') {
+//                     sh "./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=${env.APP_NAME}"
+//                 }
+//
+//                 timeout(time: 5, unit: 'MINUTES') {
+//                     waitForQualityGate abortPipeline: true
+//                 }
+//             }
+//         }
+//
+//         /*
+//          * =========================
+//          * BUILD & PUSH IMAGE
+//          * =========================
+//          */
+//         stage('Build & Push Image (Jib)') {
+//             when {
+//                 expression {
+//                     return env.GIT_BRANCH?.endsWith('/main')
+//                 }
+//             }
+//
+//             steps {
+//                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+//                                   credentialsId: 'aws-ecr-creds']]) {
+//
+//                     sh '''
+//                         ECR_PASSWORD=$(aws ecr get-login-password --region ${AWS_REGION})
+//
+//                         ./mvnw -B -ntp compile com.google.cloud.tools:jib-maven-plugin:build \
+//                           -Dimage=${IMAGE_URI} \
+//                           -Djib.to.tags=${IMAGE_TAG},latest,${GIT_BRANCH_SAFE} \
+//                           -Djib.to.auth.username=AWS \
+//                           -Djib.to.auth.password=$ECR_PASSWORD
+//                     '''
+//                 }
+//             }
+//         }
+//
+//         /*
+//          * =========================
+//          * IMAGE SCAN
+//          * =========================
+//          */
+//         stage('Image Scan (Trivy)') {
+//             when {
+//                 expression {
+//                     return env.GIT_BRANCH?.endsWith('/main')
+//                 }
+//             }
+//
+//             steps {
+//                 sh '''
+//                     trivy image \
+//                       --severity ${TRIVY_SEVERITY} \
+//                       --exit-code 1 \
+//                       --ignore-unfixed \
+//                       --format table \
+//                       ${IMAGE_URI}
+//                 '''
+//             }
+//         }
+//
+//         /*
+//          * =========================
+//          * DEPLOY (SPINNAKER)
+//          * =========================
+//          */
+//        stage('Trigger Spinnaker') {
+//            when {
+//                expression {
+//                    return env.GIT_BRANCH?.endsWith('/main')
+//                }
+//            }
+//
+//            steps {
+//                withCredentials([string(credentialsId: 'spinnaker-webhook-token',
+//                                        variable: 'SPIN_TOKEN')]) {
+//
+//                    sh '''
+//                        curl -fSL -X POST \
+//                          -H "Content-Type: application/json" \
+//                          -H "X-Spinnaker-Token: $SPIN_TOKEN" \
+//                          -d "{
+//                            \"parameters\": {
+//                              \"imageTag\": \"${IMAGE_TAG}\",
+//                              \"branch\": \"${GIT_BRANCH_SAFE}\",
+//                              \"appId\": \"${APP_ID}\",
+//                              \"buildUrl\": \"${BUILD_URL}\",
+//                              \"ecrRegistry\": \"${ECR_REGISTRY}\",
+//                              \"ecrRepo\": \"${ECR_REPO}\"
+//                            }
+//                          }" \
+//                          "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
+//                    '''
+//                }
+//            }
+//        }
+//
+//     post {
+//         success {
+//             echo "✓ Pipeline succeeded — ${IMAGE_URI}"
+//         }
+//
+//         failure {
+//             echo "✗ Pipeline FAILED — ${IMAGE_TAG}"
+//         }
+//
+//         always {
+//             cleanWs()
+//         }
+//     }
+// }
+
 
 pipeline {
 
@@ -581,77 +829,34 @@ pipeline {
 
         /*
          * =========================
-         * UNIT TESTS
+         * ENFORCE MAIN
          * =========================
          */
-//         stage('Unit Tests') {
-//             steps {
-//                 sh '''
-//                     ./mvnw -B -ntp test \
-//                       -Dspring.profiles.active=test
-//                 '''
-//             }
-//
-//             post {
-//                 always {
-//                     junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
-//                 }
-//             }
-//         }
+        stage('Enforce Main Branch') {
+            steps {
+                script {
+                    def branch = env.BRANCH_NAME ?: "unknown"
+
+                    if (branch != 'main') {
+                        error("❌ ONLY 'main' can deploy. Current: ${branch}")
+                    }
+                }
+            }
+        }
 
         /*
          * =========================
-         * INTEGRATION TESTS
-         * =========================
-         */
-//         stage('Integration Tests') {
-//             steps {
-//                 sh '''
-//                     ./mvnw -B -ntp verify \
-//                       -Dspring.profiles.active=it
-//                 '''
-//             }
-//
-//             post {
-//                 always {
-//                     junit testResults: 'target/failsafe-reports/*.xml', allowEmptyResults: true
-//                 }
-//             }
-//         }
-
-        /*
-         * =========================
-         * ENFORCE MAIN BRANCH
-         * =========================
-         */
-      stage('Enforce Main Branch') {
-          steps {
-              script {
-                  def branch = env.GIT_BRANCH ?: ""
-
-                  // Handles values like: origin/main
-                  if (!branch.endsWith('/main') && branch != 'main') {
-                      error("❌ Deployment allowed ONLY on 'main'. Current: ${branch}")
-                  }
-              }
-          }
-      }
-
-        /*
-         * =========================
-         * SONAR SCAN
+         * SONAR
          * =========================
          */
         stage('SAST (Sonar)') {
             when {
-                expression {
-                    return env.GIT_BRANCH?.endsWith('/main')
-                }
+                branch 'main'
             }
 
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    sh "./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=${env.APP_NAME}"
+                    sh "./mvnw -B -ntp -DskipTests sonar:sonar -Dsonar.projectKey=${APP_NAME}"
                 }
 
                 timeout(time: 5, unit: 'MINUTES') {
@@ -662,14 +867,12 @@ pipeline {
 
         /*
          * =========================
-         * BUILD & PUSH IMAGE
+         * BUILD & PUSH
          * =========================
          */
         stage('Build & Push Image (Jib)') {
             when {
-                expression {
-                    return env.GIT_BRANCH?.endsWith('/main')
-                }
+                branch 'main'
             }
 
             steps {
@@ -679,9 +882,10 @@ pipeline {
                     sh '''
                         ECR_PASSWORD=$(aws ecr get-login-password --region ${AWS_REGION})
 
-                        ./mvnw -B -ntp compile com.google.cloud.tools:jib-maven-plugin:build \
+                        ./mvnw -B -ntp -DskipTests compile \
+                          com.google.cloud.tools:jib-maven-plugin:build \
                           -Dimage=${IMAGE_URI} \
-                          -Djib.to.tags=${IMAGE_TAG},latest,${GIT_BRANCH_SAFE} \
+                          -Djib.to.tags=${IMAGE_TAG},latest \
                           -Djib.to.auth.username=AWS \
                           -Djib.to.auth.password=$ECR_PASSWORD
                     '''
@@ -696,9 +900,7 @@ pipeline {
          */
         stage('Image Scan (Trivy)') {
             when {
-                expression {
-                    return env.GIT_BRANCH?.endsWith('/main')
-                }
+                branch 'main'
             }
 
             steps {
@@ -707,7 +909,6 @@ pipeline {
                       --severity ${TRIVY_SEVERITY} \
                       --exit-code 1 \
                       --ignore-unfixed \
-                      --format table \
                       ${IMAGE_URI}
                 '''
             }
@@ -715,49 +916,46 @@ pipeline {
 
         /*
          * =========================
-         * DEPLOY (SPINNAKER)
+         * DEPLOY
          * =========================
          */
-       stage('Trigger Spinnaker') {
-           when {
-               expression {
-                   return env.GIT_BRANCH?.endsWith('/main')
-               }
-           }
+        stage('Trigger Spinnaker') {
+            when {
+                branch 'main'
+            }
 
-           steps {
-               withCredentials([string(credentialsId: 'spinnaker-webhook-token',
-                                       variable: 'SPIN_TOKEN')]) {
+            steps {
+                withCredentials([string(credentialsId: 'spinnaker-webhook-token',
+                                        variable: 'SPIN_TOKEN')]) {
 
-                   sh '''
-                       curl -fSL -X POST \
-                         -H "Content-Type: application/json" \
-                         -H "X-Spinnaker-Token: $SPIN_TOKEN" \
-                         -d "{
-                           \"parameters\": {
-                             \"imageTag\": \"${IMAGE_TAG}\",
-                             \"branch\": \"${GIT_BRANCH_SAFE}\",
-                             \"appId\": \"${APP_ID}\",
-                             \"buildUrl\": \"${BUILD_URL}\",
-                             \"ecrRegistry\": \"${ECR_REGISTRY}\",
-                             \"ecrRepo\": \"${ECR_REPO}\"
-                           }
-                         }" \
-                         "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
-                   '''
-               }
-           }
-       }
+                    sh '''
+                        curl -fSL -X POST \
+                          -H "Content-Type: application/json" \
+                          -H "X-Spinnaker-Token: $SPIN_TOKEN" \
+                          -d "{
+                            \"parameters\": {
+                              \"imageTag\": \"${IMAGE_TAG}\"
+                            }
+                          }" \
+                          "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
+                    '''
+                }
+            }
+        }
+    }
 
+    /*
+     * =========================
+     * POST (FIXED POSITION)
+     * =========================
+     */
     post {
         success {
-            echo "✓ Pipeline succeeded — ${IMAGE_URI}"
+            echo "✓ SUCCESS — ${IMAGE_URI}"
         }
-
         failure {
-            echo "✗ Pipeline FAILED — ${IMAGE_TAG}"
+            echo "✗ FAILED — ${IMAGE_TAG}"
         }
-
         always {
             cleanWs()
         }
