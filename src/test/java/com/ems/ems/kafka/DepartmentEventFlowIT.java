@@ -31,9 +31,13 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import org.junit.jupiter.api.condition.EnabledIf;
+import org.testcontainers.DockerClientFactory;
+
 import com.ems.ems.events.DepartmentEvent;
 import com.ems.ems.events.EventType;
 
+import org.testcontainers.DockerClientFactory;
 /**
  * End-to-end Kafka flow test.
  *
@@ -59,9 +63,13 @@ import com.ems.ems.events.EventType;
         topics = { "ems.department.events", "ems.department.events.DLT" }
 )
 @ActiveProfiles("kafka-it")
+@EnabledIf("dockerAvailable")
 @DisplayName("DepartmentEvent producer -> consumer flow")
 class DepartmentEventFlowIT {
 
+    static boolean dockerAvailable() {
+        return DockerClientFactory.instance().isDockerAvailable();
+    }
     @Container
     @ServiceConnection
     static final MariaDBContainer<?> db = new MariaDBContainer<>("mariadb:11.4")
