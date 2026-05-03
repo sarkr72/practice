@@ -912,13 +912,18 @@ pipeline {
          */
         stage('Image Scan (Trivy)') {
             steps {
-                sh '''
-                    trivy image \
-                      --severity ${TRIVY_SEVERITY} \
-                      --exit-code 1 \
-                      --ignore-unfixed \
-                      ${IMAGE_URI}
-                '''
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        trivy image \
+                          --severity ${TRIVY_SEVERITY} \
+                          --exit-code 1 \
+                          --ignore-unfixed \
+                          ${IMAGE_URI}
+                    '''
+                }
             }
         }
 
