@@ -765,6 +765,10 @@
 // }
 
 
+/*
+ * EMS pipeline — simplified + stable version
+ */
+
 pipeline {
 
     agent any
@@ -796,24 +800,20 @@ pipeline {
                 script {
                     def jules = readYaml(file: 'jules.yml')
 
-                    env.APP_NAME   = jules.application.name
-                    env.APP_ID     = jules.application['app-id']
-                    env.LOB        = jules.application.lob
-                    env.ECR_REPO   = jules.package.registry.repository
+                    env.APP_NAME = jules.application.name
+                    env.APP_ID   = jules.application['app-id']
+                    env.LOB      = jules.application.lob
+                    env.ECR_REPO = jules.package.registry.repository
 
                     env.GIT_SHA_SHORT = sh(
                         script: 'git rev-parse --short HEAD',
                         returnStdout: true
                     ).trim()
 
-                    env.GIT_BRANCH_SAFE = (env.BRANCH_NAME ?: 'local')
-                        .replaceAll('[^A-Za-z0-9._-]', '-')
-
                     env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_SHA_SHORT}"
                     env.IMAGE_URI = "${env.ECR_REGISTRY}/${env.ECR_REPO}:${env.IMAGE_TAG}"
 
                     env.SPINNAKER_BASE_URL = jules.deploy.spinnaker['base-url']
-                    env.SPINNAKER_APP      = jules.deploy.spinnaker.application
                     env.SPINNAKER_SOURCE   = jules.deploy.spinnaker['webhook-source']
 
                     env.TRIVY_SEVERITY = jules.scan.container.severity
@@ -829,13 +829,18 @@ pipeline {
 
         /*
          * =========================
-         * ENFORCE MAIN
+         * ENFORCE MAIN BRANCH
          * =========================
          */
         stage('Enforce Main Branch') {
             steps {
                 script {
-                    def branch = env.BRANCH_NAME ?: "unknown"
+                    def branch = sh(
+                        script: "git rev-parse --abbrev-ref HEAD",
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Current branch: ${branch}"
 
                     if (branch != 'main') {
                         error("❌ ONLY 'main' can deploy. Current: ${branch}")
@@ -846,17 +851,17 @@ pipeline {
 
         /*
          * =========================
-         * SONAR
+         * SONAR SCAN (skip tests)
          * =========================
          */
         stage('SAST (Sonar)') {
-            when {
-                branch 'main'
-            }
-
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    sh "./mvnw -B -ntp -DskipTests sonar:sonar -Dsonar.projectKey=${APP_NAME}"
+                    sh """
+                        ./mvnw -B -ntp -DskipTests \
+                        sonar:sonar \
+                        -Dsonar.projectKey=${APP_NAME}
+                    """
                 }
 
                 timeout(time: 5, unit: 'MINUTES') {
@@ -867,14 +872,10 @@ pipeline {
 
         /*
          * =========================
-         * BUILD & PUSH
+         * BUILD & PUSH IMAGE
          * =========================
          */
         stage('Build & Push Image (Jib)') {
-            when {
-                branch 'main'
-            }
-
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
                                   credentialsId: 'aws-ecr-creds']]) {
@@ -895,14 +896,10 @@ pipeline {
 
         /*
          * =========================
-         * IMAGE SCAN
+         * IMAGE SCAN (TRIVY)
          * =========================
          */
         stage('Image Scan (Trivy)') {
-            when {
-                branch 'main'
-            }
-
             steps {
                 sh '''
                     trivy image \
@@ -916,14 +913,10 @@ pipeline {
 
         /*
          * =========================
-         * DEPLOY
+         * DEPLOY (SPINNAKER)
          * =========================
          */
         stage('Trigger Spinnaker') {
-            when {
-                branch 'main'
-            }
-
             steps {
                 withCredentials([string(credentialsId: 'spinnaker-webhook-token',
                                         variable: 'SPIN_TOKEN')]) {
@@ -934,7 +927,8 @@ pipeline {
                           -H "X-Spinnaker-Token: $SPIN_TOKEN" \
                           -d "{
                             \"parameters\": {
-                              \"imageTag\": \"${IMAGE_TAG}\"
+                              \"imageTag\": \"${IMAGE_TAG}\",
+                              \"appId\": \"${APP_ID}\"
                             }
                           }" \
                           "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
@@ -946,7 +940,7 @@ pipeline {
 
     /*
      * =========================
-     * POST (FIXED POSITION)
+     * POST
      * =========================
      */
     post {
