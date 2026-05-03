@@ -644,7 +644,9 @@ pipeline {
          */
         stage('SAST (Sonar)') {
             when {
-                branch 'main'
+                expression {
+                    return env.GIT_BRANCH?.endsWith('/main')
+                }
             }
 
             steps {
@@ -665,7 +667,9 @@ pipeline {
          */
         stage('Build & Push Image (Jib)') {
             when {
-                branch 'main'
+                expression {
+                    return env.GIT_BRANCH?.endsWith('/main')
+                }
             }
 
             steps {
@@ -692,7 +696,9 @@ pipeline {
          */
         stage('Image Scan (Trivy)') {
             when {
-                branch 'main'
+                expression {
+                    return env.GIT_BRANCH?.endsWith('/main')
+                }
             }
 
             steps {
@@ -712,35 +718,36 @@ pipeline {
          * DEPLOY (SPINNAKER)
          * =========================
          */
-        stage('Trigger Spinnaker') {
-            when {
-                branch 'main'
-            }
+       stage('Trigger Spinnaker') {
+           when {
+               expression {
+                   return env.GIT_BRANCH?.endsWith('/main')
+               }
+           }
 
-            steps {
-                withCredentials([string(credentialsId: 'spinnaker-webhook-token',
-                                        variable: 'SPIN_TOKEN')]) {
+           steps {
+               withCredentials([string(credentialsId: 'spinnaker-webhook-token',
+                                       variable: 'SPIN_TOKEN')]) {
 
-                    sh '''
-                        curl -fSL -X POST \
-                          -H "Content-Type: application/json" \
-                          -H "X-Spinnaker-Token: $SPIN_TOKEN" \
-                          -d "{
-                            \"parameters\": {
-                              \"imageTag\": \"${IMAGE_TAG}\",
-                              \"branch\": \"${GIT_BRANCH_SAFE}\",
-                              \"appId\": \"${APP_ID}\",
-                              \"buildUrl\": \"${BUILD_URL}\",
-                              \"ecrRegistry\": \"${ECR_REGISTRY}\",
-                              \"ecrRepo\": \"${ECR_REPO}\"
-                            }
-                          }" \
-                          "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
-                    '''
-                }
-            }
-        }
-    }
+                   sh '''
+                       curl -fSL -X POST \
+                         -H "Content-Type: application/json" \
+                         -H "X-Spinnaker-Token: $SPIN_TOKEN" \
+                         -d "{
+                           \"parameters\": {
+                             \"imageTag\": \"${IMAGE_TAG}\",
+                             \"branch\": \"${GIT_BRANCH_SAFE}\",
+                             \"appId\": \"${APP_ID}\",
+                             \"buildUrl\": \"${BUILD_URL}\",
+                             \"ecrRegistry\": \"${ECR_REGISTRY}\",
+                             \"ecrRepo\": \"${ECR_REPO}\"
+                           }
+                         }" \
+                         "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
+                   '''
+               }
+           }
+       }
 
     post {
         success {
