@@ -298,6 +298,221 @@
 //     }
 // }
 
+// /*
+//  * EMS pipeline — Jenkinsfile is the Jules pipeline shell.
+//  */
+//
+// pipeline {
+//
+//     agent any
+//
+//     options {
+//         timestamps()
+//         ansiColor('xterm')
+//         timeout(time: 45, unit: 'MINUTES')
+//         buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '5'))
+//         disableConcurrentBuilds()
+//     }
+//
+//     environment {
+//         AWS_REGION     = 'us-east-1'
+//         AWS_ACCOUNT_ID = credentials('aws-account-id')
+//         ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+//         MAVEN_OPTS     = '-Dmaven.repo.local=.m2/repository'
+//
+//         CI = 'true'
+//         TESTCONTAINERS_RYUK_DISABLED = 'true'
+//     }
+//
+//     stages {
+//
+//         stage('Init') {
+//             steps {
+//                 checkout scm
+//
+//                 script {
+//                     def jules = readYaml(file: 'jules.yml')
+//
+//                     env.APP_NAME   = jules.application.name
+//                     env.APP_ID     = jules.application['app-id']
+//                     env.LOB        = jules.application.lob
+//                     env.ECR_REPO   = jules.package.registry.repository
+//
+//                     env.GIT_SHA_SHORT = sh(
+//                         script: 'git rev-parse --short HEAD',
+//                         returnStdout: true
+//                     ).trim()
+//
+//                     env.GIT_BRANCH_SAFE = (env.BRANCH_NAME ?: 'local')
+//                         .replaceAll('[^A-Za-z0-9._-]', '-')
+//
+//                     env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_SHA_SHORT}"
+//                     env.IMAGE_URI = "${env.ECR_REGISTRY}/${env.ECR_REPO}:${env.IMAGE_TAG}"
+//
+//                     env.SPINNAKER_BASE_URL = jules.deploy.spinnaker['base-url']
+//                     env.SPINNAKER_APP      = jules.deploy.spinnaker.application
+//                     env.SPINNAKER_SOURCE   = jules.deploy.spinnaker['webhook-source']
+//
+//                     env.TRIVY_SEVERITY = jules.scan.container.severity
+//                 }
+//             }
+//         }
+//
+//         stage('Prepare Maven Wrapper') {
+//             steps {
+//                 sh 'chmod +x mvnw'
+//             }
+//         }
+//
+//         /*
+//          * =========================
+//          * UNIT TESTS (FAST + H2)
+//          * =========================
+//          */
+//         stage('Unit Tests') {
+//             steps {
+//                 sh '''
+//                     ./mvnw -B -ntp test \
+//                       -Dspring.profiles.active=test
+//                 '''
+//             }
+//
+//             post {
+//                 always {
+//                     junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
+//                 }
+//             }
+//         }
+//
+//         /*
+//          * =========================
+//          * INTEGRATION TESTS (IT)
+//          * =========================
+//          * NOTE:
+//          * - uses Spring profile "it"
+//          * - Testcontainers ONLY works if Docker exists
+//          */
+//         stage('Integration Tests') {
+//             steps {
+//                 sh '''
+//                     ./mvnw -B -ntp verify \
+//                       -Dspring.profiles.active=it
+//                 '''
+//             }
+//
+//             post {
+//                 always {
+//                     junit testResults: 'target/failsafe-reports/*.xml', allowEmptyResults: true
+//                 }
+//             }
+//         }
+//
+//         stage('Scans') {
+//             parallel {
+//
+//                 stage('SAST (Sonar)') {
+//                     when {
+//                         branch pattern: 'main|develop', comparator: 'REGEXP'
+//                     }
+//
+//                     steps {
+//                         withSonarQubeEnv('SonarQube') {
+//                             sh "./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=${env.APP_NAME}"
+//                         }
+//
+//                         timeout(time: 5, unit: 'MINUTES') {
+//                             waitForQualityGate abortPipeline: true
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//
+//         stage('Build & Push Image (Jib)') {
+//             when {
+//                 branch pattern: 'main|develop', comparator: 'REGEXP'
+//             }
+//
+//             steps {
+//                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
+//                                   credentialsId: 'aws-ecr-creds']]) {
+//
+//                     sh '''
+//                         ECR_PASSWORD=$(aws ecr get-login-password --region ${AWS_REGION})
+//
+//                         ./mvnw -B -ntp compile com.google.cloud.tools:jib-maven-plugin:build \
+//                           -Dimage=${IMAGE_URI} \
+//                           -Djib.to.tags=${IMAGE_TAG},latest,${GIT_BRANCH_SAFE} \
+//                           -Djib.to.auth.username=AWS \
+//                           -Djib.to.auth.password=$ECR_PASSWORD
+//                     '''
+//                 }
+//             }
+//         }
+//
+//         stage('Image Scan (Trivy)') {
+//             when {
+//                 branch pattern: 'main|develop', comparator: 'REGEXP'
+//             }
+//
+//             steps {
+//                 sh '''
+//                     trivy image \
+//                       --severity ${TRIVY_SEVERITY} \
+//                       --exit-code 1 \
+//                       --ignore-unfixed \
+//                       --format table \
+//                       ${IMAGE_URI}
+//                 '''
+//             }
+//         }
+//
+//         stage('Trigger Spinnaker') {
+//             when {
+//                 branch pattern: 'main|develop', comparator: 'REGEXP'
+//             }
+//
+//             steps {
+//                 withCredentials([string(credentialsId: 'spinnaker-webhook-token',
+//                                         variable: 'SPIN_TOKEN')]) {
+//
+//                     sh '''
+//                         curl -fSL -X POST \
+//                           -H "Content-Type: application/json" \
+//                           -H "X-Spinnaker-Token: $SPIN_TOKEN" \
+//                           -d "{
+//                             \"parameters\": {
+//                               \"imageTag\": \"${IMAGE_TAG}\",
+//                               \"branch\": \"${GIT_BRANCH_SAFE}\",
+//                               \"appId\": \"${APP_ID}\",
+//                               \"buildUrl\": \"${BUILD_URL}\",
+//                               \"ecrRegistry\": \"${ECR_REGISTRY}\",
+//                               \"ecrRepo\": \"${ECR_REPO}\"
+//                             }
+//                           }" \
+//                           "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
+//                     '''
+//                 }
+//             }
+//         }
+//     }
+//
+//     post {
+//         success {
+//             echo "✓ Pipeline succeeded — ${IMAGE_URI}"
+//         }
+//
+//         failure {
+//             echo "✗ Pipeline FAILED — ${IMAGE_TAG}"
+//         }
+//
+//         always {
+//             cleanWs()
+//         }
+//     }
+// }
+
+
 /*
  * EMS pipeline — Jenkinsfile is the Jules pipeline shell.
  */
@@ -366,7 +581,7 @@ pipeline {
 
         /*
          * =========================
-         * UNIT TESTS (FAST + H2)
+         * UNIT TESTS
          * =========================
          */
         stage('Unit Tests') {
@@ -386,11 +601,8 @@ pipeline {
 
         /*
          * =========================
-         * INTEGRATION TESTS (IT)
+         * INTEGRATION TESTS
          * =========================
-         * NOTE:
-         * - uses Spring profile "it"
-         * - Testcontainers ONLY works if Docker exists
          */
         stage('Integration Tests') {
             steps {
@@ -407,30 +619,50 @@ pipeline {
             }
         }
 
-        stage('Scans') {
-            parallel {
-
-                stage('SAST (Sonar)') {
-                    when {
-                        branch pattern: 'main|develop', comparator: 'REGEXP'
-                    }
-
-                    steps {
-                        withSonarQubeEnv('SonarQube') {
-                            sh "./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=${env.APP_NAME}"
-                        }
-
-                        timeout(time: 5, unit: 'MINUTES') {
-                            waitForQualityGate abortPipeline: true
-                        }
+        /*
+         * =========================
+         * ENFORCE MAIN BRANCH
+         * =========================
+         */
+        stage('Enforce Main Branch') {
+            steps {
+                script {
+                    if (env.BRANCH_NAME != 'main') {
+                        error("❌ Deployment stages are allowed ONLY on 'main'. Current: ${env.BRANCH_NAME}")
                     }
                 }
             }
         }
 
+        /*
+         * =========================
+         * SONAR SCAN
+         * =========================
+         */
+        stage('SAST (Sonar)') {
+            when {
+                branch 'main'
+            }
+
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh "./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=${env.APP_NAME}"
+                }
+
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        /*
+         * =========================
+         * BUILD & PUSH IMAGE
+         * =========================
+         */
         stage('Build & Push Image (Jib)') {
             when {
-                branch pattern: 'main|develop', comparator: 'REGEXP'
+                branch 'main'
             }
 
             steps {
@@ -450,9 +682,14 @@ pipeline {
             }
         }
 
+        /*
+         * =========================
+         * IMAGE SCAN
+         * =========================
+         */
         stage('Image Scan (Trivy)') {
             when {
-                branch pattern: 'main|develop', comparator: 'REGEXP'
+                branch 'main'
             }
 
             steps {
@@ -467,9 +704,14 @@ pipeline {
             }
         }
 
+        /*
+         * =========================
+         * DEPLOY (SPINNAKER)
+         * =========================
+         */
         stage('Trigger Spinnaker') {
             when {
-                branch pattern: 'main|develop', comparator: 'REGEXP'
+                branch 'main'
             }
 
             steps {
