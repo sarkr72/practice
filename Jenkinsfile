@@ -127,20 +127,37 @@ pipeline {
         // -------------------------------------------------------------------
         // Scans — parallel, all gating per jules.yml
         // -------------------------------------------------------------------
-        stage('Scans') {
-            parallel {
+stage('Scans') {
+    parallel {
 
-                stage('SAST (Sonar)') {
-                    when { branch pattern: 'main|develop', comparator: 'REGEXP' }
-                    steps {
-                        withSonarQubeEnv('SonarQube') {
-                            sh "./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=${env.APP_NAME}"
-                        }
-                        timeout(time: 5, unit: 'MINUTES') {
-                            waitForQualityGate abortPipeline: true
-                        }
-                    }
+        stage('SAST (Sonar)') {
+            when { branch pattern: 'main|develop', comparator: 'REGEXP' }
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh "./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=${env.APP_NAME}"
                 }
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+    }
+}
+//         stage('Scans') {
+//             parallel {
+//
+//                 stage('SAST (Sonar)') {
+//                     when { branch pattern: 'main|develop', comparator: 'REGEXP' }
+//                     steps {
+//                         withSonarQubeEnv('SonarQube') {
+//                             sh "./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=${env.APP_NAME}"
+//                         }
+//                         timeout(time: 5, unit: 'MINUTES') {
+//                             waitForQualityGate abortPipeline: true
+//                         }
+//                     }
+//                 }
 
 //                 stage('SCA (Dependency-Check)') {
 //                     steps {
