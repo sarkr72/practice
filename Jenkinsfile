@@ -321,11 +321,7 @@ pipeline {
         MAVEN_OPTS     = '-Dmaven.repo.local=.m2/repository'
 
         CI = 'true'
-
-        // optional hard safety (does not replace Docker requirement)
         TESTCONTAINERS_RYUK_DISABLED = 'true'
-        TESTCONTAINERS_CHECKS_DISABLE = 'true'
-        DOCKER_HOST = ''
     }
 
     stages {
@@ -356,6 +352,8 @@ pipeline {
                     env.SPINNAKER_BASE_URL = jules.deploy.spinnaker['base-url']
                     env.SPINNAKER_APP      = jules.deploy.spinnaker.application
                     env.SPINNAKER_SOURCE   = jules.deploy.spinnaker['webhook-source']
+
+                    env.TRIVY_SEVERITY = jules.scan.container.severity
                 }
             }
         }
