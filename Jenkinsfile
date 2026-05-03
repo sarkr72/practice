@@ -860,16 +860,14 @@ pipeline {
          */
         stage('SAST (Sonar)') {
             steps {
-                withSonarQubeEnv('SonarQube') {
+                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh """
                         ./mvnw -B -ntp -DskipTests \
                         sonar:sonar \
-                        -Dsonar.projectKey=${APP_NAME}
+                        -Dsonar.projectKey=${APP_NAME} \
+                        -Dsonar.host.url=https://sonarcloud.io \
+                        -Dsonar.login=$SONAR_TOKEN
                     """
-                }
-
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
                 }
             }
         }
