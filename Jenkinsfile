@@ -769,6 +769,10 @@
  * EMS pipeline — simplified + stable version
  */
 
+/*
+ * EMS pipeline — FINAL (handles detached HEAD correctly)
+ */
+
 pipeline {
 
     agent any
@@ -829,21 +833,21 @@ pipeline {
 
         /*
          * =========================
-         * ENFORCE MAIN BRANCH
+         * ENFORCE MAIN (FIXED)
          * =========================
          */
         stage('Enforce Main Branch') {
             steps {
                 script {
-                    def branch = sh(
-                        script: "git rev-parse --abbrev-ref HEAD",
+                    def result = sh(
+                        script: "git branch -r --contains HEAD | grep origin/main || true",
                         returnStdout: true
                     ).trim()
 
-                    echo "Current branch: ${branch}"
+                    echo "Branch detection: ${result}"
 
-                    if (branch != 'main') {
-                        error("❌ ONLY 'main' can deploy. Current: ${branch}")
+                    if (!result) {
+                        error("❌ ONLY 'main' can deploy. This commit is NOT from main.")
                     }
                 }
             }
@@ -851,7 +855,7 @@ pipeline {
 
         /*
          * =========================
-         * SONAR SCAN (skip tests)
+         * SONAR (skip tests)
          * =========================
          */
         stage('SAST (Sonar)') {
