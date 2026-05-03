@@ -624,20 +624,18 @@ pipeline {
          * ENFORCE MAIN BRANCH
          * =========================
          */
-        stage('Enforce Main Branch') {
-            steps {
-                script {
-                    def branch = sh(
-                        script: "git rev-parse --abbrev-ref HEAD",
-                        returnStdout: true
-                    ).trim()
+      stage('Enforce Main Branch') {
+          steps {
+              script {
+                  def branch = env.GIT_BRANCH ?: ""
 
-                    if (branch != 'main') {
-                        error("❌ Deployment stages allowed ONLY on 'main'. Current: ${branch}")
-                    }
-                }
-            }
-        }
+                  // Handles values like: origin/main
+                  if (!branch.endsWith('/main') && branch != 'main') {
+                      error("❌ Deployment allowed ONLY on 'main'. Current: ${branch}")
+                  }
+              }
+          }
+      }
 
         /*
          * =========================
