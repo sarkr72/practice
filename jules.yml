@@ -105,7 +105,7 @@ deploy:
   pipeline: spinnaker
   platform: ecs-fargate
   spinnaker:
-    base-url: http://54.210.123.45:8084
+    base-url: http://100.30.203.48:8084
     application: ems
     pipeline-name: ems-deploy-cicd
     webhook-source: ems-build-complete

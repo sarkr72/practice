@@ -82,8 +82,8 @@ resource "aws_db_instance" "primary" {
   skip_final_snapshot       = var.env != "prod"
   final_snapshot_identifier = var.env == "prod" ? "${local.app}-${var.env}-final-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
 
-  performance_insights_enabled          = true
-  performance_insights_retention_period = 7
+  performance_insights_enabled          = var.env == "prod"
+  performance_insights_retention_period = var.env == "prod" ? 7 : null
 
   enabled_cloudwatch_logs_exports = ["error", "general", "slowquery"]
 
@@ -111,8 +111,8 @@ resource "aws_db_instance" "replica" {
   skip_final_snapshot = true
   apply_immediately   = var.env != "prod"
 
-  performance_insights_enabled          = false
-  performance_insights_retention_period = 7
+  performance_insights_enabled          = var.env == "prod"
+  performance_insights_retention_period = var.env == "prod" ? 7 : null
 }
 
 resource "aws_db_parameter_group" "mysql" {
