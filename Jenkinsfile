@@ -863,10 +863,11 @@ pipeline {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh """
                         ./mvnw -B -ntp -DskipTests \
-                        sonar:sonar \
-                        -Dsonar.projectKey=${APP_NAME} \
-                        -Dsonar.host.url=https://sonarcloud.io \
-                        -Dsonar.login=$SONAR_TOKEN
+                          org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
+                          -Dsonar.projectKey=ems \
+                          -Dsonar.organization=YOUR_ORG \
+                          -Dsonar.host.url=https://sonarcloud.io \
+                          -Dsonar.login=$SONAR_TOKEN
                     """
                 }
             }
