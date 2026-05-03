@@ -11,9 +11,11 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 
 import com.ems.ems.entities.Department;
+import org.springframework.test.context.ActiveProfiles;
 
 @DataJpaTest
 @AutoConfigureTestDatabase // H2 via test classpath
+@ActiveProfiles("test")
 @DisplayName("DepartmentRepository")
 class DepartmentRepositoryTest {
 

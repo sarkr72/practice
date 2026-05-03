@@ -15,9 +15,11 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 
 import com.ems.ems.entities.Department;
 import com.ems.ems.entities.Employee;
+import org.springframework.test.context.ActiveProfiles;
 
 @DataJpaTest
 @AutoConfigureTestDatabase
+@ActiveProfiles("test")
 @DisplayName("EmployeeRepository")
 class EmployeeRepositoryTest {
 
