@@ -861,15 +861,16 @@ pipeline {
         stage('SAST (Sonar)') {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    sh '''
-                        ./mvnw -B -ntp -DskipTests \
+                    timeout(time: 5, unit: 'MINUTES') {
+                        sh '''
+                          ./mvnw -B -ntp -DskipTests \
                           org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
                           -Dsonar.projectKey=sarkr72_practice \
                           -Dsonar.organization=sarkr72 \
                           -Dsonar.host.url=https://sonarcloud.io \
-                          -Dsonar.projectVersion=${BUILD_NUMBER} \
                           -Dsonar.login=$SONAR_TOKEN
-                    '''
+                        '''
+                    }
                 }
             }
         }
