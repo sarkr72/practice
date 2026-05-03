@@ -320,10 +320,12 @@ pipeline {
         ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         MAVEN_OPTS     = '-Dmaven.repo.local=.m2/repository'
 
-        // 🔥 CRITICAL: disables Testcontainers Docker dependency in CI
+        CI = 'true'
+
+        // optional hard safety (does not replace Docker requirement)
         TESTCONTAINERS_RYUK_DISABLED = 'true'
         TESTCONTAINERS_CHECKS_DISABLE = 'true'
-        DOCKER_HOST = ''   // prevents accidental docker socket usage
+        DOCKER_HOST = ''
     }
 
     stages {
@@ -354,9 +356,6 @@ pipeline {
                     env.SPINNAKER_BASE_URL = jules.deploy.spinnaker['base-url']
                     env.SPINNAKER_APP      = jules.deploy.spinnaker.application
                     env.SPINNAKER_SOURCE   = jules.deploy.spinnaker['webhook-source']
-
-                    env.SCA_FAIL_CVSS  = jules.scan.sca['fail-on-cvss'].toString()
-                    env.TRIVY_SEVERITY = jules.scan.container.severity
                 }
             }
         }
@@ -367,12 +366,16 @@ pipeline {
             }
         }
 
+        /*
+         * =========================
+         * UNIT TESTS (FAST + H2)
+         * =========================
+         */
         stage('Unit Tests') {
             steps {
                 sh '''
                     ./mvnw -B -ntp test \
-                      -Dspring.profiles.active=test \
-                      -Dtestcontainers.enabled=false
+                      -Dspring.profiles.active=test
                 '''
             }
 
@@ -384,13 +387,19 @@ pipeline {
             }
         }
 
+        /*
+         * =========================
+         * INTEGRATION TESTS (IT)
+         * =========================
+         * NOTE:
+         * - uses Spring profile "it"
+         * - Testcontainers ONLY works if Docker exists
+         */
         stage('Integration Tests') {
             steps {
                 sh '''
                     ./mvnw -B -ntp verify \
-                      -DskipUnitTests=true \
-                      -Dspring.profiles.active=test \
-                      -Dtestcontainers.enabled=false
+                      -Dspring.profiles.active=it
                 '''
             }
 
