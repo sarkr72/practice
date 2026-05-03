@@ -319,6 +319,9 @@ pipeline {
         AWS_ACCOUNT_ID = credentials('aws-account-id')
         ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         MAVEN_OPTS     = '-Dmaven.repo.local=.m2/repository'
+
+        // 🔥 FIX: prevents Testcontainers from trying Docker in Jenkins
+        CI              = 'true'
     }
 
     stages {
@@ -333,7 +336,6 @@ pipeline {
                     env.APP_NAME   = jules.application.name
                     env.APP_ID     = jules.application['app-id']
                     env.LOB        = jules.application.lob
-
                     env.ECR_REPO   = jules.package.registry.repository
 
                     env.GIT_SHA_SHORT = sh(
@@ -366,13 +368,21 @@ Image       : ${env.IMAGE_URI}
             }
         }
 
+        stage('Prepare Maven Wrapper') {
+            steps {
+                sh '''
+                    chmod +x mvnw
+                '''
+            }
+        }
+
         stage('Unit Tests') {
             steps {
                 sh '''
-                    chmod +x mvnw || true
-                    ./mvnw -B -ntp test
+                    ./mvnw -B -ntp test -Dspring.profiles.active=ci
                 '''
             }
+
             post {
                 always {
                     junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
@@ -384,9 +394,12 @@ Image       : ${env.IMAGE_URI}
         stage('Integration Tests') {
             steps {
                 sh '''
-                    ./mvnw -B -ntp verify -DskipUnitTests=true
+                    ./mvnw -B -ntp verify \
+                      -DskipUnitTests=true \
+                      -Dspring.profiles.active=ci
                 '''
             }
+
             post {
                 always {
                     junit testResults: 'target/failsafe-reports/*.xml', allowEmptyResults: true
@@ -401,6 +414,7 @@ Image       : ${env.IMAGE_URI}
                     when {
                         branch pattern: 'main|develop', comparator: 'REGEXP'
                     }
+
                     steps {
                         withSonarQubeEnv('SonarQube') {
                             sh "./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=${env.APP_NAME}"
@@ -423,15 +437,15 @@ Image       : ${env.IMAGE_URI}
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
                                   credentialsId: 'aws-ecr-creds']]) {
 
-                    sh """
-                        ECR_PASSWORD=\$(aws ecr get-login-password --region ${AWS_REGION})
+                    sh '''
+                        ECR_PASSWORD=$(aws ecr get-login-password --region ${AWS_REGION})
 
                         ./mvnw -B -ntp compile com.google.cloud.tools:jib-maven-plugin:build \
                           -Dimage=${IMAGE_URI} \
                           -Djib.to.tags=${IMAGE_TAG},latest,${GIT_BRANCH_SAFE} \
                           -Djib.to.auth.username=AWS \
-                          -Djib.to.auth.password=\$ECR_PASSWORD
-                    """
+                          -Djib.to.auth.password=$ECR_PASSWORD
+                    '''
                 }
             }
         }
@@ -442,14 +456,14 @@ Image       : ${env.IMAGE_URI}
             }
 
             steps {
-                sh """
+                sh '''
                     trivy image \
                       --severity ${TRIVY_SEVERITY} \
                       --exit-code 1 \
                       --ignore-unfixed \
                       --format table \
                       ${IMAGE_URI}
-                """
+                '''
             }
         }
 
@@ -462,22 +476,22 @@ Image       : ${env.IMAGE_URI}
                 withCredentials([string(credentialsId: 'spinnaker-webhook-token',
                                         variable: 'SPIN_TOKEN')]) {
 
-                    sh """
+                    sh '''
                         curl -fSL -X POST \
-                          -H 'Content-Type: application/json' \
-                          -H "X-Spinnaker-Token: \$SPIN_TOKEN" \
-                          -d '{
-                            "parameters": {
-                              "imageTag": "${IMAGE_TAG}",
-                              "branch": "${GIT_BRANCH_SAFE}",
-                              "appId": "${APP_ID}",
-                              "buildUrl": "${BUILD_URL}",
-                              "ecrRegistry": "${ECR_REGISTRY}",
-                              "ecrRepo": "${ECR_REPO}"
+                          -H "Content-Type: application/json" \
+                          -H "X-Spinnaker-Token: $SPIN_TOKEN" \
+                          -d "{
+                            \"parameters\": {
+                              \"imageTag\": \"${IMAGE_TAG}\",
+                              \"branch\": \"${GIT_BRANCH_SAFE}\",
+                              \"appId\": \"${APP_ID}\",
+                              \"buildUrl\": \"${BUILD_URL}\",
+                              \"ecrRegistry\": \"${ECR_REGISTRY}\",
+                              \"ecrRepo\": \"${ECR_REPO}\"
                             }
-                          }' \
+                          }" \
                           "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
-                    """
+                    '''
                 }
             }
         }
