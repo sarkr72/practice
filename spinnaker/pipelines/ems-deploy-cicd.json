@@ -93,7 +93,7 @@
       "subnetType":  "ecs-tasks-dev",
       "securityGroups": ["image-uploader-dev-tasks"],
       "associatePublicIpAddress": true,
-      "iamRole":              "image-uploader-dev-task",
+      "iamRole":              "image-uploader-dev-task-exec",
       "taskRoleArn":          "image-uploader-dev-task",
       "taskDefinitionArtifact": null,
       "containerDefinitions": [
@@ -207,7 +207,8 @@
       "subnetType":  "ecs-tasks-prod",
       "securityGroups": ["image-uploader-prod-tasks"],
       "associatePublicIpAddress": true,
-      "iamRole":     "image-uploader-prod-task",
+      "iamRole":     "image-uploader-prod-task-exec",
+      "taskRoleArn": "image-uploader-prod-task",
       "containerDefinitions": [
         {
           "name":      "ems",
@@ -291,7 +292,8 @@
       "subnetType":  "ecs-tasks-prod",
       "securityGroups": ["image-uploader-prod-tasks"],
       "associatePublicIpAddress": true,
-      "iamRole":     "image-uploader-prod-task",
+      "iamRole":     "image-uploader-prod-task-exec",
+      "taskRoleArn": "image-uploader-prod-task",
       "containerDefinitions": [
         {
           "name":      "ems",
@@ -339,7 +341,7 @@
       "cloudProvider": "ecs",
       "credentials": "aws-prod",
       "regions": ["us-east-1"],
-      "cluster": "ems-prod-canary",
+      "cluster": "image-uploader-prod-canary",
       "target":  "current_asg"
     },
 

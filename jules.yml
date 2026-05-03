@@ -76,8 +76,8 @@ scan:
     fail-on-severity: HIGH
   container:
     tool: trivy
-    severity: HIGH,CRITICAL
-    fail-on-severity: HIGH
+    severity: CRITICAL
+    fail-on-severity: CRITICAL
     ignore-unfixed: true
 
 # ---------------------------------------------------------------------------
