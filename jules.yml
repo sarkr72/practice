@@ -105,7 +105,7 @@ deploy:
   pipeline: spinnaker
   platform: ecs-fargate
   spinnaker:
-    base-url: http://host.docker.internal:32176
+    base-url: http://host.docker.internal:32347
     application: imageuploader
     pipeline-name: deploy-to-ecs
     webhook-source: imageuploader-deploy
