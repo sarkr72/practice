@@ -929,25 +929,19 @@ pipeline {
          */
         stage('Trigger Spinnaker') {
             steps {
-                withCredentials([string(credentialsId: 'spinnaker-webhook-token',
-                                        variable: 'SPIN_TOKEN')]) {
-
-                    sh '''
-                        curl -fSL -X POST \
-                          -H "Content-Type: application/json" \
-                          -H "X-Spinnaker-Token: $SPIN_TOKEN" \
-                          -d "{
-                            \"parameters\": {
-                              \"imageTag\": \"${IMAGE_TAG}\",
-                              \"appId\": \"${APP_ID}\"
-                            }
-                          }" \
-                          "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
-                    '''
-                }
+                sh '''
+                    curl -fSL -X POST \
+                      -H "Content-Type: application/json" \
+                      -d "{
+                        \"parameters\": {
+                          \"imageTag\": \"${IMAGE_TAG}\",
+                          \"appId\": \"${APP_ID}\"
+                        }
+                      }" \
+                      "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
+                '''
             }
         }
-    }
 
     /*
      * =========================
