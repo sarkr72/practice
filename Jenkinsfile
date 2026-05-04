@@ -835,15 +835,15 @@ pipeline {
         stage('Enforce Main Branch') {
             steps {
                 script {
-                    def branch = sh(
-                        script: "git rev-parse --abbrev-ref HEAD",
+                    def result = sh(
+                        script: "git branch -r --contains HEAD | grep origin/main || true",
                         returnStdout: true
                     ).trim()
 
-                    echo "Detected branch: ${branch}"
+                    echo "Branch detection: ${result}"
 
-                    if (branch != "main") {
-                        error("❌ ONLY 'main' can deploy. Current branch: ${branch}")
+                    if (!result) {
+                        error("❌ ONLY 'main' can deploy. This commit is NOT from main.")
                     }
                 }
             }
@@ -883,8 +883,6 @@ pipeline {
                     string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
                     sh '''
-                        set -e
-
                         ECR_PASSWORD=$(aws ecr get-login-password --region ${AWS_REGION})
 
                         ./mvnw -B -ntp -DskipTests compile \
@@ -928,16 +926,20 @@ pipeline {
         stage('Trigger Spinnaker') {
             steps {
                 sh '''
-                    set -e
-
                     curl -fSL -X POST \
                       -H "Content-Type: application/json" \
-                      -d "{\"parameters\":{\"imageTag\":\"${IMAGE_TAG}\",\"appId\":\"${APP_ID}\"}}" \
+                      -d "{
+                        \"parameters\": {
+                          \"imageTag\": \"${IMAGE_TAG}\",
+                          \"appId\": \"${APP_ID}\"
+                        }
+                      }" \
                       "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
                 '''
             }
         }
-    }
+
+    } // ✅ stages CLOSED HERE
 
     /*
      * =========================
