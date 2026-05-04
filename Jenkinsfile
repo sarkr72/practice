@@ -928,12 +928,7 @@ pipeline {
                 sh '''
                     curl -fSL -X POST \
                       -H "Content-Type: application/json" \
-                      -d "{
-                        \"parameters\": {
-                          \"imageTag\": \"${IMAGE_TAG}\",
-                          \"appId\": \"${APP_ID}\"
-                        }
-                      }" \
+                      -d "{\\"parameters\\":{\\"imageTag\\":\\"${IMAGE_TAG}\\",\\"appId\\":\\"${APP_ID}\\"}}" \
                       "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
                 '''
             }
