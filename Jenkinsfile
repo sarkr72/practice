@@ -769,10 +769,6 @@
  * EMS pipeline — simplified + stable version
  */
 
-/*
- * EMS pipeline — FINAL (handles detached HEAD correctly)
- */
-
 pipeline {
 
     agent any
@@ -839,15 +835,15 @@ pipeline {
         stage('Enforce Main Branch') {
             steps {
                 script {
-                    def result = sh(
-                        script: "git branch -r --contains HEAD | grep origin/main || true",
+                    def branch = sh(
+                        script: "git rev-parse --abbrev-ref HEAD",
                         returnStdout: true
                     ).trim()
 
-                    echo "Branch detection: ${result}"
+                    echo "Detected branch: ${branch}"
 
-                    if (!result) {
-                        error("❌ ONLY 'main' can deploy. This commit is NOT from main.")
+                    if (branch != "main") {
+                        error("❌ ONLY 'main' can deploy. Current branch: ${branch}")
                     }
                 }
             }
@@ -887,6 +883,8 @@ pipeline {
                     string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
                     sh '''
+                        set -e
+
                         ECR_PASSWORD=$(aws ecr get-login-password --region ${AWS_REGION})
 
                         ./mvnw -B -ntp -DskipTests compile \
@@ -930,18 +928,16 @@ pipeline {
         stage('Trigger Spinnaker') {
             steps {
                 sh '''
+                    set -e
+
                     curl -fSL -X POST \
                       -H "Content-Type: application/json" \
-                      -d "{
-                        \"parameters\": {
-                          \"imageTag\": \"${IMAGE_TAG}\",
-                          \"appId\": \"${APP_ID}\"
-                        }
-                      }" \
+                      -d "{\"parameters\":{\"imageTag\":\"${IMAGE_TAG}\",\"appId\":\"${APP_ID}\"}}" \
                       "${SPINNAKER_BASE_URL}/webhooks/webhook/${SPINNAKER_SOURCE}"
                 '''
             }
         }
+    }
 
     /*
      * =========================
