@@ -880,25 +880,25 @@ pipeline {
          * BUILD & PUSH IMAGE
          * =========================
          */
-        stage('Build & Push Image (Jib)') {
-            steps {
-                withCredentials([
-                    string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    sh '''
-                        ECR_PASSWORD=$(aws ecr get-login-password --region ${AWS_REGION})
-
-                        ./mvnw -B -ntp -DskipTests compile \
-                          com.google.cloud.tools:jib-maven-plugin:build \
-                          -Dimage=${IMAGE_URI} \
-                          -Djib.to.tags=${IMAGE_TAG},latest \
-                          -Djib.to.auth.username=AWS \
-                          -Djib.to.auth.password=$ECR_PASSWORD
-                    '''
-                }
-            }
-        }
+//         stage('Build & Push Image (Jib)') {
+//             steps {
+//                 withCredentials([
+//                     string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
+//                     string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+//                 ]) {
+//                     sh '''
+//                         ECR_PASSWORD=$(aws ecr get-login-password --region ${AWS_REGION})
+//
+//                         ./mvnw -B -ntp -DskipTests compile \
+//                           com.google.cloud.tools:jib-maven-plugin:build \
+//                           -Dimage=${IMAGE_URI} \
+//                           -Djib.to.tags=${IMAGE_TAG},latest \
+//                           -Djib.to.auth.username=AWS \
+//                           -Djib.to.auth.password=$ECR_PASSWORD
+//                     '''
+//                 }
+//             }
+//         }
 
         /*
          * =========================
