@@ -105,10 +105,10 @@ deploy:
   pipeline: spinnaker
   platform: ecs-fargate
   spinnaker:
-    base-url: http://host.docker.internal:8084
-    application: helloapp
-    pipeline-name: Deploy nginx
-    webhook-source: deploy-nginx
+    base-url: http://host.docker.internal:32176
+    application: imageuploader
+    pipeline-name: deploy-to-ecs
+    webhook-source: imageuploader-deploy
   environments:
     - name: dev
       branches: [develop, main]
