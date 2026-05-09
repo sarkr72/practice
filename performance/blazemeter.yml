@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# BlazeMeter / Taurus configuration for the EMS perf environment.
+#
+# Run locally with Taurus:
+#     bzt performance/blazemeter.yml
+#
+# Run in BlazeMeter cloud:
+#     bzt performance/blazemeter.yml -cloud
+#
+# Override host/users from CLI:
+#     bzt performance/blazemeter.yml -o modules.jmeter.properties.host=ems-perf.internal \
+#                                    -o execution.0.concurrency=200
+#
+# CI/CD: the BlazeMeter API key is read from the BLAZEMETER_API_KEY /
+# BLAZEMETER_API_SECRET env vars (mapped from Jenkins credentials).
+# ---------------------------------------------------------------------------
+
+execution:
+  - executor: jmeter
+    scenario: ems-api
+    concurrency: 50
+    ramp-up: 30s
+    hold-for: 5m
+    throughput: 600          # requests/min cap across the thread group
+
+scenarios:
+  ems-api:
+    script: jmeter/ems-load-test.jmx
+
+settings:
+  env:
+    # Default target — override per-environment via -o or CLI -P props.
+    host: ems-perf.internal
+    port: 8080
+    protocol: http
+
+modules:
+  jmeter:
+    version: 5.6.3
+    properties:
+      host: ${host}
+      port: ${port}
+      protocol: ${protocol}
+
+  cloud:
+    # BlazeMeter project + test will be created/updated by name on first run.
+    project: EMS
+    test: EMS-Perf-Load
+    token: ${BLAZEMETER_API_KEY}:${BLAZEMETER_API_SECRET}
+
+reporting:
+  - module: console
+  - module: final-stats
+    summary: true
+    percentiles: true
+    test-duration: true
+    dump-xml: build/perf/stats.xml
+  - module: junit-xml
+    filename: build/perf/junit.xml
+  - module: passfail
+    criteria:
+      # Fail the build if perf SLOs are missed.
+      - avg-rt of ems-api>500ms for 30s, stop as failed
+      - p95.0 of ems-api>1500ms, stop as failed
+      - fail of ems-api>1% for 1m, stop as failed

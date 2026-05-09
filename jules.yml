@@ -54,6 +54,13 @@ test:
     reports: target/failsafe-reports/*.xml
     requires:
       - docker                       # Testcontainers needs the docker socket
+  performance:
+    enabled: true
+    tool: blazemeter                 # JMeter under the hood, executed via Taurus
+    plan: performance/jmeter/ems-load-test.jmx
+    config: performance/blazemeter.yml
+    runs-against: perf               # only against the perf environment
+    fail-on-slo-breach: true
 
 # ---------------------------------------------------------------------------
 # Security scans — run in parallel after tests pass
@@ -116,6 +123,20 @@ deploy:
       smoke-test:
         path: /actuator/health
         expected-status: 200
+    - name: perf
+      branches: [main]
+      auto-promote: true               # auto-deploy after dev to run load tests
+      smoke-test:
+        path: /actuator/health
+        expected-status: 200
+      perf-test:
+        tool: blazemeter
+        plan: performance/jmeter/ems-load-test.jmx
+        config: performance/blazemeter.yml
+        slo:
+          avg-response-ms: 500
+          p95-response-ms: 1500
+          error-rate-pct: 1
     - name: prod
       branches: [main]
       auto-promote: false              # manual judgment in Spinnaker
