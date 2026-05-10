@@ -9,6 +9,8 @@
     "",
     "Flow:",
     "  Webhook -> Deploy Dev (redblack) -> Smoke Dev",
+    "         -> Deploy Perf (redblack) -> Smoke Perf",
+    "         -> Run BlazeMeter Load Test (Jenkins job 'ems-perf-load-test')",
     "         -> [Manual Judgment if branch=main]",
     "         -> Deploy Prod Canary (1 task, canary target group)",
     "         -> Bake 10 min",
@@ -143,8 +145,130 @@
     },
 
     {
-      "refId": "3",
+      "refId": "perf-deploy",
       "requisiteStageRefIds": ["2"],
+      "name": "Deploy to Perf",
+      "type": "createServerGroup",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "cloudProvider": "ecs",
+      "credentials": "aws-perf",
+      "region": "us-east-1",
+      "application": "ems",
+      "stack": "perf",
+      "ecsClusterName": "image-uploader-perf",
+      "launchType": "FARGATE",
+      "platformVersion": "LATEST",
+      "computeUnits": 1024,
+      "reservedMemory": 2048,
+      "containerInformation": {
+        "imageDescription": {
+          "imageId":    "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "registry":   "${parameters.ecrRegistry}",
+          "repository": "${parameters.ecrRepo}",
+          "tag":        "${parameters.imageTag}"
+        }
+      },
+      "containerPort": 8080,
+      "targetGroupMappings": [
+        {
+          "containerName": "ems",
+          "containerPort": 8080,
+          "targetGroup":   "image-uploader-perf-stable"
+        }
+      ],
+      "networkMode": "awsvpc",
+      "subnetType":  "ecs-tasks-perf",
+      "securityGroups": ["image-uploader-perf-tasks"],
+      "associatePublicIpAddress": false,
+      "iamRole":     "image-uploader-perf-task-exec",
+      "taskRoleArn": "image-uploader-perf-task",
+      "containerDefinitions": [
+        {
+          "name":      "ems",
+          "image":     "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "essential": true,
+          "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+          "environment": [
+            { "name": "SPRING_PROFILES_ACTIVE", "value": "perf" },
+            { "name": "APP_ID",                 "value": "${parameters.appId}" }
+          ],
+          "secrets": [
+            { "name": "DB_HOST",                  "valueFrom": "/perf/image-uploader/DB_HOST" },
+            { "name": "DB_PORT",                  "valueFrom": "/perf/image-uploader/DB_PORT" },
+            { "name": "DB_NAME",                  "valueFrom": "/perf/image-uploader/DB_NAME" },
+            { "name": "DB_USERNAME",              "valueFrom": "/perf/image-uploader/DB_USERNAME" },
+            { "name": "DB_PASSWORD",              "valueFrom": "/perf/image-uploader/DB_PASSWORD" },
+            { "name": "REDIS_HOST",               "valueFrom": "/perf/image-uploader/REDIS_HOST" },
+            { "name": "REDIS_PORT",               "valueFrom": "/perf/image-uploader/REDIS_PORT" },
+            { "name": "REDIS_PASSWORD",           "valueFrom": "/perf/image-uploader/REDIS_PASSWORD" },
+            { "name": "KAFKA_BOOTSTRAP_SERVERS",  "valueFrom": "/perf/image-uploader/KAFKA_BOOTSTRAP_SERVERS" }
+          ],
+          "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+              "awslogs-group":         "/ecs/image-uploader-perf",
+              "awslogs-region":        "us-east-1",
+              "awslogs-stream-prefix": "ecs"
+            }
+          }
+        }
+      ],
+      "capacity":         { "min": 2, "max": 4, "desired": 2 },
+      "strategy":         "redblack",
+      "maxRemainingAsgs": 2,
+      "rollback":         { "onFailure": true },
+      "scaleDown":        true
+    },
+
+    {
+      "refId": "perf-smoke",
+      "requisiteStageRefIds": ["perf-deploy"],
+      "name": "Smoke Test Perf",
+      "type": "webhook",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "method": "GET",
+      "url": "https://ems-perf.example.internal/actuator/health",
+      "waitForCompletion": true,
+      "successStatuses": "200"
+    },
+
+    {
+      "_comment": [
+        "Triggers a downstream Jenkins job 'ems-perf-load-test' that runs",
+        "BlazeMeter cloud against the freshly deployed perf cluster.",
+        "Spinnaker waits for the Jenkins job to finish and inherits its result.",
+        "The Jenkins job uses Jenkinsfile.perf (PERF_ONLY=true) and gates on",
+        "the SLOs defined in performance/blazemeter.yml."
+      ],
+      "refId": "perf-loadtest",
+      "requisiteStageRefIds": ["perf-smoke"],
+      "name": "BlazeMeter Load Test (Perf)",
+      "type": "jenkins",
+      "stageEnabled": {
+        "type": "expression",
+        "expression": "${parameters.branch == 'main'}"
+      },
+      "master":  "ems-jenkins",
+      "job":     "ems-perf-load-test",
+      "parameters": {
+        "imageTag":  "${parameters.imageTag}",
+        "perfHost":  "ems-perf.example.internal",
+        "perfPort":  "443"
+      },
+      "waitForCompletion":     true,
+      "markUnstableAsSuccessful": false,
+      "failPipeline":          true
+    },
+
+    {
+      "refId": "3",
+      "requisiteStageRefIds": ["perf-loadtest"],
       "name": "Manual Judgment (Prod Approval)",
       "type": "manualJudgment",
       "stageEnabled": {
@@ -155,7 +279,7 @@
         { "value": "Promote to prod" },
         { "value": "Hold" }
       ],
-      "instructions": "Review dev smoke test results and approve prod deploy.\n\nJenkins build: ${parameters.buildUrl}\nImage tag: ${parameters.imageTag}",
+      "instructions": "Review dev smoke + perf BlazeMeter SLO results, then approve prod deploy.\n\nJenkins build: ${parameters.buildUrl}\nImage tag: ${parameters.imageTag}",
       "notifications": [
         {
           "address": "#ems-releases",

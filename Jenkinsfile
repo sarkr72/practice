@@ -935,39 +935,11 @@ pipeline {
         }
 
         /*
-         * =========================
-         * PERFORMANCE TEST (BlazeMeter / JMeter)
-         * =========================
-         * Runs against the `perf` environment only. Spinnaker is expected to
-         * deploy the new image to perf before this stage executes; here we
-         * simply drive the load test and gate on SLOs configured in
-         * performance/blazemeter.yml.
+         * NOTE: The BlazeMeter performance test stage has moved out of this
+         * pipeline. Spinnaker now drives the perf flow:
+         *   Deploy Perf -> Smoke Perf -> trigger Jenkins job 'ems-perf-load-test'
+         * That job is defined by Jenkinsfile.perf in this repo.
          */
-        stage('Performance Test (BlazeMeter)') {
-            environment {
-                PERF_HOST = 'ems-perf.internal'
-                PERF_PORT = '8080'
-            }
-            steps {
-                withCredentials([
-                    string(credentialsId: 'blazemeter-api-key',    variable: 'BLAZEMETER_API_KEY'),
-                    string(credentialsId: 'blazemeter-api-secret', variable: 'BLAZEMETER_API_SECRET')
-                ]) {
-                    sh '''
-                        pip install --quiet bzt
-                        bzt performance/blazemeter.yml -cloud \
-                          -o settings.env.host=${PERF_HOST} \
-                          -o settings.env.port=${PERF_PORT}
-                    '''
-                }
-            }
-            post {
-                always {
-                    junit testResults: 'build/perf/junit.xml', allowEmptyResults: true
-                    archiveArtifacts artifacts: 'build/perf/**', allowEmptyArchive: true
-                }
-            }
-        }
 
     } // ✅ stages CLOSED HERE
 
