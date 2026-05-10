@@ -1,0 +1,70 @@
+/*
+ * Jenkinsfile.perf — downstream Jenkins job 'ems-perf-load-test'.
+ *
+ * Triggered by Spinnaker's `BlazeMeter Load Test (Perf)` stage AFTER perf is
+ * deployed and smoke-tested. This pipeline does ONE thing: run the BlazeMeter
+ * cloud load test against the perf cluster and gate on the SLOs declared in
+ * performance/blazemeter.yml.
+ *
+ * Build parameters (passed in by Spinnaker):
+ *   imageTag  — image just deployed to perf (recorded in build display name)
+ *   perfHost  — DNS name of the perf ALB (e.g. ems-perf.example.internal)
+ *   perfPort  — port on the perf ALB (e.g. 443)
+ */
+
+pipeline {
+
+    agent any
+
+    options {
+        timestamps()
+        ansiColor('xterm')
+        timeout(time: 30, unit: 'MINUTES')
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        string(name: 'imageTag', defaultValue: 'unknown',                    description: 'Image tag now running on perf')
+        string(name: 'perfHost', defaultValue: 'ems-perf.example.internal',  description: 'Perf ALB hostname')
+        string(name: 'perfPort', defaultValue: '443',                        description: 'Perf ALB port')
+    }
+
+    stages {
+
+        stage('Init') {
+            steps {
+                script {
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} ${params.imageTag}"
+                }
+                sh 'pip install --quiet bzt'
+            }
+        }
+
+        stage('BlazeMeter Cloud Run') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'blazemeter-api-key',    variable: 'BLAZEMETER_API_KEY'),
+                    string(credentialsId: 'blazemeter-api-secret', variable: 'BLAZEMETER_API_SECRET')
+                ]) {
+                    sh '''
+                        bzt performance/blazemeter.yml -cloud \
+                          -o settings.env.host=${perfHost} \
+                          -o settings.env.port=${perfPort}
+                    '''
+                }
+            }
+            post {
+                always {
+                    junit testResults: 'build/perf/junit.xml', allowEmptyResults: true
+                    archiveArtifacts artifacts: 'build/perf/**', allowEmptyArchive: true
+                }
+            }
+        }
+    }
+
+    post {
+        success { echo "✓ Perf SLOs passed for ${params.imageTag}" }
+        failure { echo "✗ Perf SLOs FAILED for ${params.imageTag} — prod promotion blocked" }
+        always  { cleanWs() }
+    }
+}

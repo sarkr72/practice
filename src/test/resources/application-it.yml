@@ -55,6 +55,11 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+    properties:
+      hibernate:
+        # Enables Hibernate's per-session Statistics so query-count
+        # assertions in IT tests can detect N+1 regressions.
+        generate_statistics: true
 
   flyway:
     enabled: true

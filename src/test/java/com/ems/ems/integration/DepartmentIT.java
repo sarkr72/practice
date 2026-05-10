@@ -28,6 +28,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import com.ems.ems.dtos.DepartmentDto;
 import com.ems.ems.repositories.DepartmentRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.testcontainers.containers.MariaDBContainer;
 /**
  * Integration test - boots the full Spring context against a real MySQL container.
@@ -70,6 +73,9 @@ class DepartmentIT {
 
     @Autowired
     private DepartmentRepository departmentRepository;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -163,5 +169,39 @@ class DepartmentIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(
                         org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+    }
+
+    /**
+     * Pre-perf gate: catches N+1 regressions before they hit BlazeMeter.
+     * Listing departments must be a constant number of SQL statements,
+     * regardless of row count. The threshold is intentionally loose (5) so
+     * minor query plan changes don't break the build, but tight enough that
+     * an accidental N+1 over even a handful of rows trips it.
+     */
+    @Test
+    @DisplayName("GET /departments emits a bounded number of queries (no N+1)")
+    void listDoesNotIssueNPlusOneQueries() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            DepartmentDto dto = DepartmentDto.builder()
+                    .name("perf-dept-" + i)
+                    .description("seed")
+                    .build();
+            mockMvc.perform(post("/api/v1/departments")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(dto)))
+                    .andExpect(status().isCreated());
+        }
+
+        Statistics stats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        stats.setStatisticsEnabled(true);
+        stats.clear();
+
+        mockMvc.perform(get("/api/v1/departments"))
+                .andExpect(status().isOk());
+
+        long queries = stats.getPrepareStatementCount();
+        assertThat(queries)
+                .as("listing departments must not scale with row count — N+1 regression?")
+                .isLessThanOrEqualTo(5);
     }
 }
