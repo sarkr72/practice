@@ -20,8 +20,8 @@ ENV="${1:?usage: $0 <env> [destroy]}"
 ARG2="${2:-}"
 
 case "$ENV" in
-  dev|prod) ;;
-  *) echo "env must be one of: dev, prod" >&2; exit 1 ;;
+  dev|perf|prod) ;;
+  *) echo "env must be one of: dev, perf, prod" >&2; exit 1 ;;
 esac
 
 VAR_FILE="variables/${ENV}.tfvars"

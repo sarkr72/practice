@@ -45,8 +45,13 @@ ECS cluster, IAM, RDS, ECR, secrets. Run once per environment, re-run when
 infra changes:
 ```bash
 ./scripts/deploy.sh dev
+./scripts/deploy.sh perf
 ./scripts/deploy.sh prod
 ```
+
+The `perf` environment mirrors prod (Redis + Kafka enabled) and is the target
+for load tests. See [`performance/README.md`](performance/README.md) for the
+JMeter plan and BlazeMeter wiring.
 
 **2. Application (Spinnaker).** Provisions ECS services and task definitions.
 Triggered automatically by every push to `develop` or `main` via Jenkins.

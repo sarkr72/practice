@@ -31,6 +31,14 @@
 
 		<tomcat.version>10.1.53</tomcat.version>
 		<spring-security.version>6.5.9</spring-security.version>
+
+		<jmeter-maven-plugin.version>3.8.0</jmeter-maven-plugin.version>
+		<perf.host>localhost</perf.host>
+		<perf.port>8080</perf.port>
+		<perf.protocol>http</perf.protocol>
+		<perf.users>50</perf.users>
+		<perf.rampUp>30</perf.rampUp>
+		<perf.duration>300</perf.duration>
 	</properties>
 
 	<dependencyManagement>
@@ -344,5 +352,56 @@
 			</plugin>
 		</plugins>
 	</build>
+
+	<!-- ==========================================================
+	     Performance test profile.
+	     Activated with: mvn -Pperf-test verify
+	     Runs the JMeter plan in performance/jmeter against the
+	     host configured via -Dperf.host (default: localhost).
+	     ========================================================== -->
+	<profiles>
+		<profile>
+			<id>perf-test</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>com.lazerycode.jmeter</groupId>
+						<artifactId>jmeter-maven-plugin</artifactId>
+						<version>${jmeter-maven-plugin.version}</version>
+						<configuration>
+							<testFilesDirectory>${project.basedir}/performance/jmeter</testFilesDirectory>
+							<resultsDirectory>${project.build.directory}/jmeter/results</resultsDirectory>
+							<generateReports>true</generateReports>
+							<ignoreResultFailures>false</ignoreResultFailures>
+							<propertiesUser>
+								<host>${perf.host}</host>
+								<port>${perf.port}</port>
+								<protocol>${perf.protocol}</protocol>
+								<users>${perf.users}</users>
+								<rampUp>${perf.rampUp}</rampUp>
+								<duration>${perf.duration}</duration>
+							</propertiesUser>
+						</configuration>
+						<executions>
+							<execution>
+								<id>jmeter-tests</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>jmeter</goal>
+								</goals>
+							</execution>
+							<execution>
+								<id>jmeter-check-results</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>results</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 
 </project>
