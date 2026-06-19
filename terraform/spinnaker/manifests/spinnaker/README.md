@@ -10,12 +10,9 @@ Run from this directory after `terraform apply` in `terraform/spinnaker`:
 ```bash
 # Pull every value the manifest needs
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-export AWS_REGION=$(terraform -chdir=../../ output -raw -json 2>/dev/null \
-  | jq -r '.cluster_endpoint.value' | awk -F'[/.]' '{print $5}')
+export AWS_REGION=us-east-1
 export SPINNAKER_ROLE_ARN=$(terraform -chdir=../../ output -raw spinnaker_role_arn)
 export PERSISTENCE_BUCKET=$(terraform -chdir=../../ output -raw persistence_bucket)
-export JENKINS_BASE_URL="${JENKINS_BASE_URL:-http://jenkins.example.internal}"
-export JENKINS_WEBHOOK_TOKEN="${JENKINS_WEBHOOK_TOKEN:-changeme}"
 
 envsubst < spinnakerservice.yaml > /tmp/spinnakerservice.rendered.yaml
 ```
@@ -51,5 +48,9 @@ Visit `http://<that-hostname>:9000`. No login — see the security warning in
 spin pipeline save --file ../../../../spinnaker/pipelines/ems-deploy-cicd.json
 ```
 
-The pipeline references account names `aws-dev` and `aws-prod-ecs` defined
-in the SpinnakerService above. Reconcile any name changes before importing.
+The pipeline references account names `aws-dev` and `aws-prod` defined in the
+SpinnakerService above. Reconcile any name changes before importing.
+
+> **Windows users:** `envsubst` isn't available by default. Use the PowerShell
+> rendering steps in [`DEPLOY-WINDOWS.md`](../../../../DEPLOY-WINDOWS.md) instead
+> of the bash block above — everything else on this page is the same.

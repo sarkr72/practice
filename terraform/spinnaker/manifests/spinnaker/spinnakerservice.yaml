@@ -7,8 +7,9 @@
 #   __AWS_REGION__            e.g. us-east-1
 #   __SPINNAKER_ROLE_ARN__    output: spinnaker_role_arn
 #   __PERSISTENCE_BUCKET__    output: persistence_bucket
-#   __JENKINS_BASE_URL__      e.g. http://jenkins.example.internal
-#   __JENKINS_WEBHOOK_TOKEN__ shared token; same value lives in Jenkins creds
+#
+# CI is GitHub Actions (.github/workflows/deploy.yml): Actions builds the image
+# and POSTs the inbound webhook below, so no Jenkins/igor master is configured.
 #
 # Auth: disabled. Anyone reaching Deck's LoadBalancer can drive Spinnaker.
 # This is a learning setup — restrict the LB SG to your IP, or front it with
@@ -61,14 +62,10 @@ spec:
           enabled: true
           accounts:
             - name: ecr-artifacts
-      ci:
-        jenkins:
-          enabled: true
-          masters:
-            - name: jenkins
-              address: __JENKINS_BASE_URL__
-              username: spinnaker
-              password: __JENKINS_WEBHOOK_TOKEN__
+      # Inbound webhook trigger from GitHub Actions. trust.enabled=false means
+      # the X-Spinnaker-Token header is not enforced — fine for a learning
+      # setup where the Gate LoadBalancer SG is locked to your IP. Set it to
+      # true and add a `webhooks.preflight` secret to require the token.
       webhooks:
         trust:
           enabled: false

@@ -18,7 +18,7 @@ and a Jenkins → Jib → Spinnaker CI/CD pipeline targeting ECS Fargate.
 | Build          | Maven Wrapper                                                |
 | Container      | Jib in CI, Dockerfile fallback for local debug               |
 | Infra          | Terraform (ECS Fargate platform; Spinnaker owns services)    |
-| CI / CD        | Jenkins → Jib → ECR → Spinnaker → ECS Fargate                |
+| CI / CD        | GitHub Actions → Jib → ECR → Spinnaker → ECS Fargate (Jenkinsfile kept as alt) |
 | Observability  | Actuator, Micrometer (Prometheus), structured JSON logs      |
 
 ## Quick start (local dev)
@@ -37,6 +37,10 @@ When done:
 ```
 
 ## Deploy
+
+> **Full walkthrough (Windows, infra → app):** [`DEPLOY-WINDOWS.md`](DEPLOY-WINDOWS.md)
+> covers the whole thing end to end — bootstrap, Spinnaker on EKS, EMS platform,
+> GitHub Actions wiring, and the push-to-main auto-deploy loop.
 
 Two-step ownership model:
 
@@ -57,9 +61,10 @@ for load tests. See [`performance/README.md`](performance/README.md) for the
 JMeter plan and BlazeMeter wiring.
 
 **3. EMS application (Spinnaker).** Provisions ECS services and task
-definitions. Triggered automatically by every push to `develop` or `main`
-via Jenkins. First time: import the pipeline once with `spin pipeline save`.
-Details in [`spinnaker/README.md`](spinnaker/README.md).
+definitions. Triggered automatically by every push to `main` via GitHub
+Actions (`.github/workflows/deploy.yml`), which builds the image and POSTs the
+Spinnaker webhook. First time: import the pipeline once with `spin pipeline
+save`. Details in [`spinnaker/README.md`](spinnaker/README.md).
 
 CI/CD architecture and end-to-end flow are documented in [`CICD.md`](CICD.md).
 
