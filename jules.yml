@@ -98,7 +98,7 @@ package:
   registry:
     type: ecr
     region: us-east-1
-    repository: image-uploader
+    repository: ems
   tags:
     - "${BUILD_NUMBER}-${GIT_SHA_SHORT}"
     - "${GIT_BRANCH_SAFE}"
@@ -113,9 +113,9 @@ deploy:
   platform: ecs-fargate
   spinnaker:
     base-url: http://172.19.0.2:32347
-    application: imageuploader
+    application: ems
     pipeline-name: deploy-to-ecs
-    webhook-source: imageuploader-deploy
+    webhook-source: ems-deploy
   environments:
     - name: dev
       branches: [develop, main]

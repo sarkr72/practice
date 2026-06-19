@@ -40,9 +40,12 @@ When done:
 
 Two-step ownership model:
 
-**1. Platform (terraform).** Provisions the immutable bits: ALB, target groups,
-ECS cluster, IAM, RDS, ECR, secrets. Run once per environment, re-run when
-infra changes:
+**1. Spinnaker control plane (one-time).** EKS cluster, IRSA role, S3
+persistence, Operator + SpinnakerService. See
+[`terraform/spinnaker/README.md`](terraform/spinnaker/README.md).
+
+**2. EMS platform (per environment).** ALB, target groups, ECS cluster,
+IAM, RDS, ECR, secrets. Re-runnable when infra changes:
 ```bash
 ./scripts/deploy.sh dev
 ./scripts/deploy.sh perf
@@ -53,10 +56,10 @@ The `perf` environment mirrors prod (Redis + Kafka enabled) and is the target
 for load tests. See [`performance/README.md`](performance/README.md) for the
 JMeter plan and BlazeMeter wiring.
 
-**2. Application (Spinnaker).** Provisions ECS services and task definitions.
-Triggered automatically by every push to `develop` or `main` via Jenkins.
-First time: import the pipeline once with `spin pipeline save`. Details in
-[`spinnaker/README.md`](spinnaker/README.md).
+**3. EMS application (Spinnaker).** Provisions ECS services and task
+definitions. Triggered automatically by every push to `develop` or `main`
+via Jenkins. First time: import the pipeline once with `spin pipeline save`.
+Details in [`spinnaker/README.md`](spinnaker/README.md).
 
 CI/CD architecture and end-to-end flow are documented in [`CICD.md`](CICD.md).
 
@@ -74,7 +77,6 @@ CI/CD architecture and end-to-end flow are documented in [`CICD.md`](CICD.md).
 ems/
 ├── README.md                    ← this file
 ├── CICD.md                      ← CI/CD architecture
-├── CHANGES-cicd.md              ← change history
 ├── jules.yml                    ← pipeline-as-config (source of truth for thresholds)
 ├── Jenkinsfile                  ← CI shell, reads jules.yml
 ├── pom.xml
@@ -83,7 +85,9 @@ ems/
 ├── docker-compose.override.yml  ← compose-only sanity check of prod image
 │
 ├── scripts/                     ← deploy / smoke-test helpers
-├── spinnaker/                   ← Spinnaker pipeline JSON + import docs
-├── terraform/                   ← AWS platform (ECS Fargate)
+├── spinnaker/                   ← EMS deploy pipeline JSON
+├── terraform/
+│   ├── ems/                     ← workload: ALB, ECS Fargate, RDS, ECR, IAM
+│   └── spinnaker/               ← platform: EKS, IRSA, S3, Operator manifests
 └── src/                         ← Spring Boot app
 ```

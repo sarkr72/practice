@@ -4,12 +4,12 @@
 # Spinnaker's task definition (in spinnaker/pipelines/ems-deploy-cicd.json)
 # references these by path:
 #
-#   /<env>/image-uploader/DB_HOST       (SSM)
-#   /<env>/image-uploader/DB_PORT       (SSM)
-#   /<env>/image-uploader/DB_NAME       (SSM)
-#   /<env>/image-uploader/DB_USERNAME   (SSM)
-#   /<env>/image-uploader/DB_PASSWORD   (Secrets Manager — populated by rds.tf)
-#   /<env>/image-uploader/JWT_SECRET    (Secrets Manager — populated out-of-band, prod only)
+#   /<env>/ems/DB_HOST       (SSM)
+#   /<env>/ems/DB_PORT       (SSM)
+#   /<env>/ems/DB_NAME       (SSM)
+#   /<env>/ems/DB_USERNAME   (SSM)
+#   /<env>/ems/DB_PASSWORD   (Secrets Manager — populated by rds.tf)
+#   /<env>/ems/JWT_SECRET    (Secrets Manager — populated out-of-band, prod only)
 #
 # Why split SSM vs Secrets Manager: DB host/port/name/username aren't sensitive
 # but DO change with infrastructure, so they belong in config storage. The

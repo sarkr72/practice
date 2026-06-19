@@ -13,28 +13,29 @@ terraform {
   }
 
   # Backend uses workspace_key_prefix so dev and prod live at separate keys:
-  #   env:/dev/image-uploader/terraform.tfstate
-  #   env:/prod/image-uploader/terraform.tfstate
+  #   env:/dev/ems/terraform.tfstate
+  #   env:/prod/ems/terraform.tfstate
   #
   # Workflow:
   #   terraform init
   #   terraform workspace new dev   # first time only
   #   terraform workspace select dev
-  #   terraform apply -var-file=variables/dev.tfvars
+  #   terraform apply -var-file=envs/dev.tfvars
   #
-  # Pre-flight (one-time, manual): create the bucket + lock table:
-  #   aws s3api create-bucket --bucket rinku-tfstate-imageuploader-001 --region us-east-1
-  #   aws s3api put-bucket-versioning --bucket rinku-tfstate-imageuploader-001 \
+  # Pre-flight (one-time, manual): create the shared state bucket + lock table.
+  # The same bucket also holds terraform/spinnaker state under a different key.
+  #   aws s3api create-bucket --bucket rinku-tfstate-001 --region us-east-1
+  #   aws s3api put-bucket-versioning --bucket rinku-tfstate-001 \
   #     --versioning-configuration Status=Enabled
   #   aws dynamodb create-table --table-name terraform-locks \
   #     --attribute-definitions AttributeName=LockID,AttributeType=S \
   #     --key-schema AttributeName=LockID,KeyType=HASH --billing-mode PAY_PER_REQUEST
   backend "s3" {
-    bucket         = "rinku-tfstate-imageuploader-001"
-    key            = "image-uploader/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "terraform-locks"
-    encrypt        = true
+    bucket               = "rinku-tfstate-001"
+    key                  = "ems/terraform.tfstate"
+    region               = "us-east-1"
+    dynamodb_table       = "terraform-locks"
+    encrypt              = true
     workspace_key_prefix = "env"
   }
 }
@@ -45,7 +46,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      project   = "image-uploader"
+      project   = "ems"
       env       = var.env
       managedBy = "terraform"
       owner     = "rinku"

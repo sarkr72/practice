@@ -1,0 +1,115 @@
+# SpinnakerService CR — the operator reads this and reconciles all Spinnaker
+# microservices (deck, gate, clouddriver, orca, front50, echo, rosco, igor).
+#
+# Placeholders below must be substituted before `kubectl apply`. The README
+# in this directory has the one-liner that does it from terraform outputs.
+#   __AWS_ACCOUNT_ID__        12-digit account
+#   __AWS_REGION__            e.g. us-east-1
+#   __SPINNAKER_ROLE_ARN__    output: spinnaker_role_arn
+#   __PERSISTENCE_BUCKET__    output: persistence_bucket
+#   __JENKINS_BASE_URL__      e.g. http://jenkins.example.internal
+#   __JENKINS_WEBHOOK_TOKEN__ shared token; same value lives in Jenkins creds
+#
+# Auth: disabled. Anyone reaching Deck's LoadBalancer can drive Spinnaker.
+# This is a learning setup — restrict the LB SG to your IP, or front it with
+# Cognito/OIDC before exposing anywhere real.
+#
+# Persistence: S3 only. front50 stores app/pipeline configs, clouddriver
+# stores its cache snapshots.
+
+apiVersion: spinnaker.io/v1alpha2
+kind: SpinnakerService
+metadata:
+  name: spinnaker
+  namespace: spinnaker
+spec:
+  spinnakerConfig:
+    config:
+      version: 1.34.2
+      persistentStorage:
+        persistentStoreType: s3
+        s3:
+          bucket: __PERSISTENCE_BUCKET__
+          region: __AWS_REGION__
+          rootFolder: front50
+      providers:
+        aws:
+          enabled: true
+          accounts:
+            - name: aws-dev
+              accountId: "__AWS_ACCOUNT_ID__"
+              regions:
+                - name: __AWS_REGION__
+              assumeRole: role/spinnaker-managed
+              permissions: {}
+          primaryAccount: aws-dev
+          defaultAssumeRole: role/spinnaker-managed
+        # Two ECS accounts both point at the single underlying AWS account.
+        # In a real org these would be separate AWS accounts; same names so
+        # the pipeline JSON's credentials: aws-dev / aws-prod just work.
+        ecs:
+          enabled: true
+          accounts:
+            - name: aws-dev
+              awsAccount: aws-dev
+            - name: aws-prod
+              awsAccount: aws-dev
+      features:
+        artifacts: true
+      artifacts:
+        s3:
+          enabled: true
+          accounts:
+            - name: ecr-artifacts
+      ci:
+        jenkins:
+          enabled: true
+          masters:
+            - name: jenkins
+              address: __JENKINS_BASE_URL__
+              username: spinnaker
+              password: __JENKINS_WEBHOOK_TOKEN__
+      webhooks:
+        trust:
+          enabled: false
+      security:
+        apiSecurity:
+          ssl:
+            enabled: false
+        uiSecurity:
+          ssl:
+            enabled: false
+      deploymentEnvironment:
+        accountName: spinnaker
+        size: SMALL
+        type: Distributed
+
+    # Per-service overrides. Annotates the default SA in the spinnaker
+    # namespace with the IRSA role so clouddriver can call ECS / read S3.
+    service-settings:
+      clouddriver:
+        kubernetes:
+          serviceAccountName: spinnaker-sa
+      front50:
+        kubernetes:
+          serviceAccountName: spinnaker-sa
+
+  # Expose Deck (UI) and Gate (API) via AWS NLB. No TLS — see header note.
+  expose:
+    type: service
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      publicPort: 0
+      overrides: {}
+
+---
+# IRSA-annotated SA for clouddriver/front50. Substitute __SPINNAKER_ROLE_ARN__.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spinnaker-sa
+  namespace: spinnaker
+  annotations:
+    eks.amazonaws.com/role-arn: __SPINNAKER_ROLE_ARN__

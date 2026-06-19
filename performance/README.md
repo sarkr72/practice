@@ -16,7 +16,7 @@ performance/
 ## Targeting the perf environment
 
 The Spring profile `perf` is defined in `src/main/resources/application-perf.yml`.
-Terraform variables for the env live in `terraform/variables/perf.tfvars`.
+Terraform variables for the env live in `terraform/ems/envs/perf.tfvars`.
 
 The default target host is `ems-perf.internal:8080`. Override per-run.
 
