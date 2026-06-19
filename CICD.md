@@ -2,6 +2,17 @@
 
 End-to-end picture of how a commit becomes a running task on ECS Fargate.
 
+> **Active CI trigger: GitHub Actions.** This repo deploys via
+> `.github/workflows/deploy.yml` — push to `main` → Actions builds + pushes the
+> image (Jib → ECR via OIDC) → POSTs the webhook → Spinnaker deploys to ECS
+> Fargate. For the full step-by-step setup (Windows) see
+> [`DEPLOY-WINDOWS.md`](DEPLOY-WINDOWS.md).
+>
+> The **Jenkins** path documented below is the original, still-supported
+> alternative (`Jenkinsfile`). Everything from "Spinnaker (CD)" onward is
+> identical regardless of which CI tool triggers it — only the box that builds
+> the image and fires the webhook changes. Pick one; don't run both.
+
 ## Tools and what each one does
 
 | Tool        | Role                                                       |
