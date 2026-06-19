@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-cd "$(dirname "$0")/../terraform"
+cd "$(dirname "$0")/../terraform/ems"
 
 ENV="${1:?usage: $0 <env> [destroy]}"
 ARG2="${2:-}"
@@ -24,7 +24,7 @@ case "$ENV" in
   *) echo "env must be one of: dev, perf, prod" >&2; exit 1 ;;
 esac
 
-VAR_FILE="variables/${ENV}.tfvars"
+VAR_FILE="envs/${ENV}.tfvars"
 if [[ ! -f "$VAR_FILE" ]]; then
   echo "Missing $VAR_FILE" >&2
   exit 1

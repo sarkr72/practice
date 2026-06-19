@@ -39,7 +39,7 @@
     { "name": "appId",       "required": false, "default": "APP-EMS-UNASSIGNED" },
     { "name": "buildUrl",    "required": false, "description": "Link back to Jenkins build" },
     { "name": "ecrRegistry", "required": true,  "description": "<account>.dkr.ecr.<region>.amazonaws.com" },
-    { "name": "ecrRepo",     "required": false, "default": "image-uploader" }
+    { "name": "ecrRepo",     "required": false, "default": "ems" }
   ],
 
   "triggers": [
@@ -70,7 +70,7 @@
       "region": "us-east-1",
       "application": "ems",
       "stack": "dev",
-      "ecsClusterName": "image-uploader-dev",
+      "ecsClusterName": "ems-dev",
       "launchType": "FARGATE",
       "platformVersion": "LATEST",
       "computeUnits": 512,
@@ -88,15 +88,15 @@
         {
           "containerName": "ems",
           "containerPort": 8080,
-          "targetGroup":   "image-uploader-dev-stable"
+          "targetGroup":   "ems-dev-stable"
         }
       ],
       "networkMode": "awsvpc",
       "subnetType":  "ecs-tasks-dev",
-      "securityGroups": ["image-uploader-dev-tasks"],
+      "securityGroups": ["ems-dev-tasks"],
       "associatePublicIpAddress": true,
-      "iamRole":              "image-uploader-dev-task-exec",
-      "taskRoleArn":          "image-uploader-dev-task",
+      "iamRole":              "ems-dev-task-exec",
+      "taskRoleArn":          "ems-dev-task",
       "taskDefinitionArtifact": null,
       "containerDefinitions": [
         {
@@ -109,16 +109,16 @@
             { "name": "APP_ID",                 "value": "${parameters.appId}" }
           ],
           "secrets": [
-            { "name": "DB_HOST",     "valueFrom": "/dev/image-uploader/DB_HOST" },
-            { "name": "DB_PORT",     "valueFrom": "/dev/image-uploader/DB_PORT" },
-            { "name": "DB_NAME",     "valueFrom": "/dev/image-uploader/DB_NAME" },
-            { "name": "DB_USERNAME", "valueFrom": "/dev/image-uploader/DB_USERNAME" },
-            { "name": "DB_PASSWORD", "valueFrom": "/dev/image-uploader/DB_PASSWORD" }
+            { "name": "DB_HOST",     "valueFrom": "/dev/ems/DB_HOST" },
+            { "name": "DB_PORT",     "valueFrom": "/dev/ems/DB_PORT" },
+            { "name": "DB_NAME",     "valueFrom": "/dev/ems/DB_NAME" },
+            { "name": "DB_USERNAME", "valueFrom": "/dev/ems/DB_USERNAME" },
+            { "name": "DB_PASSWORD", "valueFrom": "/dev/ems/DB_PASSWORD" }
           ],
           "logConfiguration": {
             "logDriver": "awslogs",
             "options": {
-              "awslogs-group":         "/ecs/image-uploader-dev",
+              "awslogs-group":         "/ecs/ems-dev",
               "awslogs-region":        "us-east-1",
               "awslogs-stream-prefix": "ecs"
             }
@@ -158,7 +158,7 @@
       "region": "us-east-1",
       "application": "ems",
       "stack": "perf",
-      "ecsClusterName": "image-uploader-perf",
+      "ecsClusterName": "ems-perf",
       "launchType": "FARGATE",
       "platformVersion": "LATEST",
       "computeUnits": 1024,
@@ -176,15 +176,15 @@
         {
           "containerName": "ems",
           "containerPort": 8080,
-          "targetGroup":   "image-uploader-perf-stable"
+          "targetGroup":   "ems-perf-stable"
         }
       ],
       "networkMode": "awsvpc",
       "subnetType":  "ecs-tasks-perf",
-      "securityGroups": ["image-uploader-perf-tasks"],
+      "securityGroups": ["ems-perf-tasks"],
       "associatePublicIpAddress": false,
-      "iamRole":     "image-uploader-perf-task-exec",
-      "taskRoleArn": "image-uploader-perf-task",
+      "iamRole":     "ems-perf-task-exec",
+      "taskRoleArn": "ems-perf-task",
       "containerDefinitions": [
         {
           "name":      "ems",
@@ -196,20 +196,20 @@
             { "name": "APP_ID",                 "value": "${parameters.appId}" }
           ],
           "secrets": [
-            { "name": "DB_HOST",                  "valueFrom": "/perf/image-uploader/DB_HOST" },
-            { "name": "DB_PORT",                  "valueFrom": "/perf/image-uploader/DB_PORT" },
-            { "name": "DB_NAME",                  "valueFrom": "/perf/image-uploader/DB_NAME" },
-            { "name": "DB_USERNAME",              "valueFrom": "/perf/image-uploader/DB_USERNAME" },
-            { "name": "DB_PASSWORD",              "valueFrom": "/perf/image-uploader/DB_PASSWORD" },
-            { "name": "REDIS_HOST",               "valueFrom": "/perf/image-uploader/REDIS_HOST" },
-            { "name": "REDIS_PORT",               "valueFrom": "/perf/image-uploader/REDIS_PORT" },
-            { "name": "REDIS_PASSWORD",           "valueFrom": "/perf/image-uploader/REDIS_PASSWORD" },
-            { "name": "KAFKA_BOOTSTRAP_SERVERS",  "valueFrom": "/perf/image-uploader/KAFKA_BOOTSTRAP_SERVERS" }
+            { "name": "DB_HOST",                  "valueFrom": "/perf/ems/DB_HOST" },
+            { "name": "DB_PORT",                  "valueFrom": "/perf/ems/DB_PORT" },
+            { "name": "DB_NAME",                  "valueFrom": "/perf/ems/DB_NAME" },
+            { "name": "DB_USERNAME",              "valueFrom": "/perf/ems/DB_USERNAME" },
+            { "name": "DB_PASSWORD",              "valueFrom": "/perf/ems/DB_PASSWORD" },
+            { "name": "REDIS_HOST",               "valueFrom": "/perf/ems/REDIS_HOST" },
+            { "name": "REDIS_PORT",               "valueFrom": "/perf/ems/REDIS_PORT" },
+            { "name": "REDIS_PASSWORD",           "valueFrom": "/perf/ems/REDIS_PASSWORD" },
+            { "name": "KAFKA_BOOTSTRAP_SERVERS",  "valueFrom": "/perf/ems/KAFKA_BOOTSTRAP_SERVERS" }
           ],
           "logConfiguration": {
             "logDriver": "awslogs",
             "options": {
-              "awslogs-group":         "/ecs/image-uploader-perf",
+              "awslogs-group":         "/ecs/ems-perf",
               "awslogs-region":        "us-east-1",
               "awslogs-stream-prefix": "ecs"
             }
@@ -306,7 +306,7 @@
       "application": "ems",
       "stack": "prod",
       "freeFormDetails": "canary",
-      "ecsClusterName": "image-uploader-prod",
+      "ecsClusterName": "ems-prod",
       "launchType": "FARGATE",
       "platformVersion": "LATEST",
       "computeUnits": 512,
@@ -324,15 +324,15 @@
         {
           "containerName": "ems",
           "containerPort": 8080,
-          "targetGroup":   "image-uploader-prod-canary"
+          "targetGroup":   "ems-prod-canary"
         }
       ],
       "networkMode": "awsvpc",
       "subnetType":  "ecs-tasks-prod",
-      "securityGroups": ["image-uploader-prod-tasks"],
+      "securityGroups": ["ems-prod-tasks"],
       "associatePublicIpAddress": true,
-      "iamRole":     "image-uploader-prod-task-exec",
-      "taskRoleArn": "image-uploader-prod-task",
+      "iamRole":     "ems-prod-task-exec",
+      "taskRoleArn": "ems-prod-task",
       "containerDefinitions": [
         {
           "name":      "ems",
@@ -344,17 +344,17 @@
             { "name": "APP_ID",                 "value": "${parameters.appId}" }
           ],
           "secrets": [
-            { "name": "DB_HOST",     "valueFrom": "/prod/image-uploader/DB_HOST" },
-            { "name": "DB_PORT",     "valueFrom": "/prod/image-uploader/DB_PORT" },
-            { "name": "DB_NAME",     "valueFrom": "/prod/image-uploader/DB_NAME" },
-            { "name": "DB_USERNAME", "valueFrom": "/prod/image-uploader/DB_USERNAME" },
-            { "name": "DB_PASSWORD", "valueFrom": "/prod/image-uploader/DB_PASSWORD" },
-            { "name": "JWT_SECRET",  "valueFrom": "/prod/image-uploader/JWT_SECRET" }
+            { "name": "DB_HOST",     "valueFrom": "/prod/ems/DB_HOST" },
+            { "name": "DB_PORT",     "valueFrom": "/prod/ems/DB_PORT" },
+            { "name": "DB_NAME",     "valueFrom": "/prod/ems/DB_NAME" },
+            { "name": "DB_USERNAME", "valueFrom": "/prod/ems/DB_USERNAME" },
+            { "name": "DB_PASSWORD", "valueFrom": "/prod/ems/DB_PASSWORD" },
+            { "name": "JWT_SECRET",  "valueFrom": "/prod/ems/JWT_SECRET" }
           ],
           "logConfiguration": {
             "logDriver": "awslogs",
             "options": {
-              "awslogs-group":         "/ecs/image-uploader-prod",
+              "awslogs-group":         "/ecs/ems-prod",
               "awslogs-region":        "us-east-1",
               "awslogs-stream-prefix": "canary"
             }
@@ -391,7 +391,7 @@
       "region": "us-east-1",
       "application": "ems",
       "stack": "prod",
-      "ecsClusterName": "image-uploader-prod",
+      "ecsClusterName": "ems-prod",
       "launchType": "FARGATE",
       "platformVersion": "LATEST",
       "computeUnits": 512,
@@ -409,15 +409,15 @@
         {
           "containerName": "ems",
           "containerPort": 8080,
-          "targetGroup":   "image-uploader-prod-stable"
+          "targetGroup":   "ems-prod-stable"
         }
       ],
       "networkMode": "awsvpc",
       "subnetType":  "ecs-tasks-prod",
-      "securityGroups": ["image-uploader-prod-tasks"],
+      "securityGroups": ["ems-prod-tasks"],
       "associatePublicIpAddress": true,
-      "iamRole":     "image-uploader-prod-task-exec",
-      "taskRoleArn": "image-uploader-prod-task",
+      "iamRole":     "ems-prod-task-exec",
+      "taskRoleArn": "ems-prod-task",
       "containerDefinitions": [
         {
           "name":      "ems",
@@ -429,17 +429,17 @@
             { "name": "APP_ID",                 "value": "${parameters.appId}" }
           ],
           "secrets": [
-            { "name": "DB_HOST",     "valueFrom": "/prod/image-uploader/DB_HOST" },
-            { "name": "DB_PORT",     "valueFrom": "/prod/image-uploader/DB_PORT" },
-            { "name": "DB_NAME",     "valueFrom": "/prod/image-uploader/DB_NAME" },
-            { "name": "DB_USERNAME", "valueFrom": "/prod/image-uploader/DB_USERNAME" },
-            { "name": "DB_PASSWORD", "valueFrom": "/prod/image-uploader/DB_PASSWORD" },
-            { "name": "JWT_SECRET",  "valueFrom": "/prod/image-uploader/JWT_SECRET" }
+            { "name": "DB_HOST",     "valueFrom": "/prod/ems/DB_HOST" },
+            { "name": "DB_PORT",     "valueFrom": "/prod/ems/DB_PORT" },
+            { "name": "DB_NAME",     "valueFrom": "/prod/ems/DB_NAME" },
+            { "name": "DB_USERNAME", "valueFrom": "/prod/ems/DB_USERNAME" },
+            { "name": "DB_PASSWORD", "valueFrom": "/prod/ems/DB_PASSWORD" },
+            { "name": "JWT_SECRET",  "valueFrom": "/prod/ems/JWT_SECRET" }
           ],
           "logConfiguration": {
             "logDriver": "awslogs",
             "options": {
-              "awslogs-group":         "/ecs/image-uploader-prod",
+              "awslogs-group":         "/ecs/ems-prod",
               "awslogs-region":        "us-east-1",
               "awslogs-stream-prefix": "stable"
             }
@@ -465,7 +465,7 @@
       "cloudProvider": "ecs",
       "credentials": "aws-prod",
       "regions": ["us-east-1"],
-      "cluster": "image-uploader-prod-canary",
+      "cluster": "ems-prod-canary",
       "target":  "current_asg"
     },
 

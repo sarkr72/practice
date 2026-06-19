@@ -1,37 +1,33 @@
-# Spinnaker setup (ECS Fargate)
+# Spinnaker pipeline (ECS Fargate)
 
-## One-time application creation
+Pipeline definition for the EMS app. Imports into an existing Spinnaker
+install — provisioning Spinnaker itself is in `terraform/spinnaker/`.
 
-In Spinnaker UI:
-1. Applications → Create Application
-2. Name: `ems`, Owner: rinku@example.com
-3. Cloud providers: **Amazon Web Services, Amazon ECS**
+## Order of operations
+
+1. **Provision Spinnaker (one-time)** — see `terraform/spinnaker/README.md`.
+   Stands up EKS, IRSA role, S3 persistence, installs the Operator, applies
+   the SpinnakerService CR with both `aws-dev` and `aws-prod` ECS accounts.
+2. **Provision EMS platform (per env)** — `./scripts/deploy.sh dev`,
+   `./scripts/deploy.sh prod`. Creates ALB, target groups, ECS cluster, IAM
+   roles, RDS, ECR, secrets, log groups.
+3. **Create the Spinnaker application** — UI → Applications → Create:
+   - Name: `ems`
+   - Cloud providers: Amazon Web Services, Amazon ECS
+4. **Import this pipeline** — `spin pipeline save --file spinnaker/pipelines/ems-deploy-cicd.json`
 
 ## Pre-requisites in Spinnaker
 
-These are clouddriver / halyard concerns; ask your platform team if you don't
-own the Spinnaker install.
+These come from `terraform/spinnaker` if you used that module:
 
-1. ECS accounts registered: `aws-dev` and `aws-prod`. Each must have IAM
-   permissions to manage ECS services + task definitions in the account.
-2. Subnet attribute name `ecs-tasks-dev` and `ecs-tasks-prod` registered (this
-   is what `subnetType` in the pipeline JSON refers to). You can check with:
+1. ECS accounts `aws-dev` and `aws-prod` registered in the SpinnakerService.
+2. Subnet attribute name `ecs-tasks-dev` and `ecs-tasks-prod` registered in
+   clouddriver. Check with:
    ```
    spin clouddriver list-aws-subnet-types
    ```
-3. The IAM roles, target groups, and security groups that the pipeline
-   references by name must exist — Terraform creates them.
-
-## Apply terraform first
-
-```bash
-./scripts/deploy.sh dev
-./scripts/deploy.sh prod
-```
-
-This creates: ALB, target groups (stable + canary), ECS cluster, IAM roles,
-RDS MySQL, ECR repo, secrets, log groups. Spinnaker creates the ECS services
-and task definitions on its first pipeline run.
+3. IAM roles, target groups, security groups referenced by name — created by
+   `terraform/ems`.
 
 ## Import the pipeline
 
@@ -53,7 +49,7 @@ Or paste it into the UI: Applications → ems → Pipelines → Configure → Ed
 | `ecrRegistry` default      | Set in pipeline UI after import  | `<account>.dkr.ecr.<region>.amazonaws.com`     |
 
 The IAM role names, target group names, security group names, ECS cluster
-names, and log group names already match what `terraform/main.tf` creates.
+names, and log group names already match what `terraform/ems` creates.
 Don't rename one without the other.
 
 ## Webhook trigger
@@ -102,7 +98,7 @@ run prod stages.
 
 When you re-deploy to dev, Spinnaker:
 1. Creates a new ECS service `ems-dev-vNNN+1` with the new task definition.
-2. Registers its tasks to the same target group (`image-uploader-dev-stable`).
+2. Registers its tasks to the same target group (`ems-dev-stable`).
 3. Once the new tasks are healthy, the ALB starts routing traffic to them.
 4. Spinnaker disables the previous server group (deregisters its tasks).
 5. Once `maxRemainingAsgs=2` is exceeded, oldest disabled groups are destroyed.
@@ -112,9 +108,9 @@ button for this; nothing for you to script.
 
 ### How canary works
 
-Canary tasks register to a separate target group (`image-uploader-prod-canary`).
+Canary tasks register to a separate target group (`ems-prod-canary`).
 The default ALB listener routes 100% to stable, so canary takes no real
-traffic. A listener rule for host header `canary.image-uploader-prod.example.com`
+traffic. A listener rule for host header `canary.ems-prod.example.com`
 routes to the canary target group, so synthetic probes (curl, your monitoring)
 can hit canary directly during the bake.
 

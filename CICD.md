@@ -105,21 +105,22 @@ pick up IRSA automatically via the AWS SDK.
 
 ## Pre-flight checklist before the first end-to-end run
 
-1. AWS state bucket + DynamoDB lock table exist (one-time, see `terraform/providers.tf`)
-2. `./scripts/deploy.sh dev` succeeds → ALB, RDS, ECR, IAM, secrets all exist
-3. Jenkins credentials configured (table above)
-4. Spinnaker app `ems` created
-5. Spinnaker ECS accounts (`aws-dev`, `aws-prod`) registered in clouddriver
-6. Spinnaker subnet attributes (`ecs-tasks-dev`, `ecs-tasks-prod`) registered
-7. `spin pipeline save --file spinnaker/pipelines/ems-deploy-cicd.json`
-8. Spinnaker webhook token configured in `echo.yml`
-9. `JWT_SECRET` populated in Secrets Manager for prod (out-of-band):
+1. AWS state bucket + DynamoDB lock table exist (one-time, see `terraform/ems/providers.tf`)
+2. Spinnaker control plane up: `cd terraform/spinnaker && terraform apply`, then install the Operator and SpinnakerService (see that module's READMEs)
+3. `./scripts/deploy.sh dev` succeeds → ALB, RDS, ECR, IAM, secrets all exist
+4. Jenkins credentials configured (table above)
+5. Spinnaker app `ems` created
+6. Spinnaker ECS accounts (`aws-dev`, `aws-prod`) registered in clouddriver
+7. Spinnaker subnet attributes (`ecs-tasks-dev`, `ecs-tasks-prod`) registered
+8. `spin pipeline save --file spinnaker/pipelines/ems-deploy-cicd.json`
+9. Spinnaker webhook token configured in `echo.yml`
+10. `JWT_SECRET` populated in Secrets Manager for prod (out-of-band):
    ```
    aws secretsmanager put-secret-value \
-     --secret-id /prod/image-uploader/JWT_SECRET \
+     --secret-id /prod/ems/JWT_SECRET \
      --secret-string "$(openssl rand -base64 64)"
    ```
-10. Push a commit to `develop` branch → watch Jenkins → watch Spinnaker → see task in ECS console
+11. Push a commit to `develop` branch → watch Jenkins → watch Spinnaker → see task in ECS console
 
 ## Replacing the bake stage with Kayenta
 

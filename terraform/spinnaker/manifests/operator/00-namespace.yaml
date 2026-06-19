@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spinnaker-operator
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spinnaker

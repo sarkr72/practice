@@ -9,7 +9,7 @@
 #
 # Env variables you can override:
 #   AWS_REGION   (default: us-east-1)
-#   ECR_REPO     (default: image-uploader)
+#   ECR_REPO     (default: ems)
 
 set -euo pipefail
 
@@ -19,7 +19,7 @@ ENV="${1:?usage: $0 <env> [tag]}"
 TAG="${2:-$(git rev-parse --short HEAD 2>/dev/null || echo latest)}"
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
-ECR_REPO="${ECR_REPO:-image-uploader}"
+ECR_REPO="${ECR_REPO:-ems}"
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"

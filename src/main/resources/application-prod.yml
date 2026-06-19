@@ -1,5 +1,5 @@
 ###############################################################################
-# PROD profile - runs in EKS prod cluster.
+# PROD profile - runs on ECS Fargate prod cluster.
 # Stricter than dev: WARN logging, larger connection pool, no SQL logging,
 # 10% trace sampling.
 ###############################################################################
