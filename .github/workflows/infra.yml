@@ -1,0 +1,103 @@
+# INFRA workflow — runs Terraform, MANUALLY only.
+#
+# This NEVER runs on a code push. The only trigger is `workflow_dispatch`,
+# i.e. you go to the Actions tab -> "infra" -> "Run workflow", pick a stack /
+# action / env, and click the button. Pushing app code does nothing here.
+#
+# This is the separation you want: app deploys are automatic (deploy.yml),
+# infra changes are deliberate and human-initiated (this file).
+#
+# Required GitHub config (Settings -> Secrets and variables -> Actions):
+#   Variables:
+#     AWS_INFRA_ROLE_ARN   terraform output github_actions_infra_role_arn
+#     AWS_REGION           us-east-1
+#
+# First-run note: the AWS_INFRA_ROLE_ARN role is itself created by Terraform,
+# so the very first `terraform apply` of the spinnaker stack must be run from
+# your laptop (see DEPLOY-WINDOWS.md). After that, use this button for
+# everything.
+
+name: infra
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: "Which Terraform root to run"
+        type: choice
+        options:
+          - ems
+          - spinnaker
+        required: true
+      action:
+        description: "plan (preview, safe) or apply (make changes)"
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+        required: true
+      env:
+        description: "Environment (ems stack only; ignored for spinnaker)"
+        type: choice
+        options:
+          - dev
+          - perf
+          - prod
+        default: dev
+        required: true
+
+permissions:
+  id-token: write     # for OIDC role assumption
+  contents: read
+
+# Never let two infra runs collide.
+concurrency:
+  group: infra-${{ inputs.stack }}-${{ inputs.env }}
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Terraform ${{ inputs.action }} (${{ inputs.stack }})
+        working-directory: terraform/${{ inputs.stack }}
+        run: |
+          set -euo pipefail
+
+          # account.auto.tfvars is gitignored, so supply the account id from STS.
+          export TF_VAR_aws_account_id="$(aws sts get-caller-identity --query Account --output text)"
+
+          terraform init -input=false
+
+          # The ems stack is per-environment (workspaces + tfvars); spinnaker is single.
+          if [ "${{ inputs.stack }}" = "ems" ]; then
+            terraform workspace select "${{ inputs.env }}" 2>/dev/null \
+              || terraform workspace new "${{ inputs.env }}"
+            VAR_ARGS="-var-file=envs/${{ inputs.env }}.tfvars"
+          else
+            VAR_ARGS=""
+          fi
+
+          if [ "${{ inputs.action }}" = "apply" ]; then
+            terraform apply -input=false -auto-approve $VAR_ARGS
+          else
+            terraform plan -input=false $VAR_ARGS
+          fi
+
+      - name: Summary
+        run: |
+          echo "### Terraform ${{ inputs.action }} — ${{ inputs.stack }} ${{ inputs.env }}" >> $GITHUB_STEP_SUMMARY
+          echo "Triggered manually by @${{ github.actor }}." >> $GITHUB_STEP_SUMMARY

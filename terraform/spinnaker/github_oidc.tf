@@ -96,3 +96,39 @@ output "github_actions_role_arn" {
   description = "Set this as the AWS_ROLE_ARN variable in GitHub > Settings > Actions."
   value       = aws_iam_role.github_actions.arn
 }
+
+# ---------------------------------------------------------------------------
+# Separate role for the INFRA workflow (.github/workflows/infra.yml).
+#
+# Why a second role: running `terraform apply` creates EKS, RDS, IAM roles,
+# VPC plumbing, etc. — that needs broad permissions, unlike the app deploy
+# which only pushes an image. Keeping them as two roles means a leaked app
+# token can never run terraform, and vice-versa (least privilege by separation).
+#
+# SECURITY NOTE: this attaches AdministratorAccess. That is acceptable here
+# because (a) it's a personal learning account, and (b) infra.yml is
+# `workflow_dispatch` only — it can ONLY be started by a human clicking "Run
+# workflow", never by a code push. The trust below still restricts it to the
+# main branch of this one repo. For a real org, replace AdministratorAccess
+# with a scoped policy (or run infra from a separate repo/account entirely).
+#
+# Chicken-and-egg: this role is created BY terraform, so the FIRST
+# `terraform apply` of this spinnaker root must be run from your laptop. After
+# that, copy `github_actions_infra_role_arn` into the AWS_INFRA_ROLE_ARN
+# GitHub variable and manage all later changes from the infra.yml button.
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role" "github_actions_infra" {
+  name               = "github-actions-ems-infra"
+  assume_role_policy = data.aws_iam_policy_document.github_actions_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_infra_admin" {
+  role       = aws_iam_role.github_actions_infra.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
+output "github_actions_infra_role_arn" {
+  description = "Set this as the AWS_INFRA_ROLE_ARN variable in GitHub > Settings > Actions."
+  value       = aws_iam_role.github_actions_infra.arn
+}
