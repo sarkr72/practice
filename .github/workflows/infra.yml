@@ -14,7 +14,7 @@
 #
 # First-run note: the AWS_INFRA_ROLE_ARN role is itself created by Terraform,
 # so the very first `terraform apply` of the spinnaker stack must be run from
-# your laptop (see DEPLOY-WINDOWS.md). After that, use this button for
+# your laptop (see docs/spinnaker-infra/INSTRUCTIONS.md). After that, use this button for
 # everything.
 
 name: infra
