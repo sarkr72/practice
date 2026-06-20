@@ -382,31 +382,88 @@ add those environments and a Jenkins for BlazeMeter.
 
 ## Phase 6 — Wire GitHub Actions (the auto-deploy trigger)
 
-The workflow `.github/workflows/deploy.yml` is already in the repo. It needs
-three **variables** and one **secret** on GitHub.
+The workflow `.github/workflows/deploy.yml` is already in the repo. Three setup
+steps: get the values, save them to GitHub, open the network so GitHub can reach
+Spinnaker.
 
-Go to **GitHub → your repo → Settings → Secrets and variables → Actions**:
+### 6a. Gather the exact values to paste
+
+In PowerShell, from `terraform\spinnaker`:
+
+```powershell
+cd E:\projects\practice\terraform\spinnaker
+
+# the ARN for the app deploy role (NOT the infra one, NOT the spinnaker one)
+$ROLE_ARN = (terraform output -raw github_actions_role_arn)
+
+# the Gate hostname (from 3e — re-grab if blank)
+$GATE = kubectl -n spinnaker get svc spin-gate -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+# any random string — not enforced right now
+$WEBHOOK_TOKEN = [guid]::NewGuid().ToString()
+
+# print the four values to paste
+"AWS_ROLE_ARN              = $ROLE_ARN"
+"AWS_REGION                = us-east-1"
+"SPINNAKER_GATE_URL        = http://$GATE"
+"SPINNAKER_WEBHOOK_TOKEN   = $WEBHOOK_TOKEN"
+```
+
+> **Which ARN is "the" ARN?** You may see several roles in the spinnaker outputs.
+> The one for GitHub Actions building+pushing images is
+> **`github_actions_role_arn`** (no `_infra`). The others are for the infra
+> workflow, Spinnaker itself, or ECS tasks — don't paste those here.
+
+### 6b. Save them on GitHub
+
+GitHub → repo → **Settings → Secrets and variables → Actions**.
 
 **Variables tab → New repository variable** (×3):
 
-| Name                | Value                                              |
-|---------------------|----------------------------------------------------|
-| `AWS_ROLE_ARN`      | the `$ROLE_ARN` from Phase 2                        |
-| `AWS_REGION`        | `us-east-1`                                         |
-| `SPINNAKER_GATE_URL`| `http://<gate-host>`  (the `$GATE` from 3e, **no port**, **no trailing slash** — see the 3e port warning) |
+| Name                | Value (from 6a)         |
+|---------------------|-------------------------|
+| `AWS_ROLE_ARN`      | `$ROLE_ARN`             |
+| `AWS_REGION`        | `us-east-1`             |
+| `SPINNAKER_GATE_URL`| `http://$GATE` (no port, no trailing slash — see 3e port warning) |
 
 **Secrets tab → New repository secret** (×1):
 
-| Name                      | Value                                        |
-|---------------------------|----------------------------------------------|
-| `SPINNAKER_WEBHOOK_TOKEN` | any string, e.g. a GUID. (Not enforced while `webhooks.trust.enabled: false`, but the workflow sends it.) |
+| Name                      | Value                  |
+|---------------------------|------------------------|
+| `SPINNAKER_WEBHOOK_TOKEN` | `$WEBHOOK_TOKEN`       |
 
-> The Gate LoadBalancer SG must allow inbound from GitHub's runners for the
-> webhook to land. For a locked-down learning setup, either (a) temporarily
-> widen the Gate NLB SG to `0.0.0.0/0` on **port 80** (that's the external
-> port — see 3e) only while testing, or (b) trigger the Spinnaker pipeline
-> manually from the UI and skip the webhook. GitHub publishes its runner IP
-> ranges at `https://api.github.com/meta` if you want to scope it tightly.
+### 6c. Open the network so GitHub can reach Spinnaker Gate
+
+The Gate NLB needs to accept inbound HTTP from GitHub's runners on **port 80**
+(the external port — see 3e). Two paths depending on what AWS shows you:
+
+**If the Gate NLB has a security group in its console page**, edit that SG and
+add: Type `Custom TCP`, Port `80`, Source `0.0.0.0/0`. Done.
+
+**If the Gate NLB shows "No security group associated"** (common — older-style
+NLB), traffic is gated at the **EKS worker nodes** instead. Open *their* SG:
+
+```powershell
+# get any one EKS worker node name
+kubectl get nodes -o jsonpath='{.items[0].metadata.name}'
+```
+
+Then in AWS Console:
+1. **EC2 → Instances** → search/paste that node name → click the instance.
+2. **Security** tab → click the security group link (named like
+   `eks-cluster-sg-spinnaker-...`).
+3. **Inbound rules → Edit inbound rules → Add rule:**
+   - Type: **Custom TCP**
+   - Port: **80**
+   - Source: **0.0.0.0/0**
+4. **Save rules.**
+
+> **Safer (later):** Source `0.0.0.0/0` lets the whole internet hit your Gate.
+> Fine for a learning run while NLB auth is off. To scope it down, replace the
+> source with GitHub's published runner IP ranges from
+> `https://api.github.com/meta` (the `actions` array). Or skip this step
+> entirely and trigger the pipeline manually from the Deck UI — no inbound
+> rule needed.
 
 ---
 
@@ -509,6 +566,7 @@ explains the *why* so you can reason about it, not just copy a fix.
 | Symptom | Why it happens / fix |
 |---|---|
 | `spin pipeline save` → can't reach Gate | The `~/.spin/config` Gate endpoint is wrong. Two common causes: (a) NLB port is 80, not 8084 — use `http://<gate-host>` with no port; (b) you used a here-string (`@"..."@`) and the literal `<gate-hostname>` placeholder got written instead of the value. Fix: re-grab `$GATE` (`kubectl -n spinnaker get svc spin-gate -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'`), then write the file with the `"...$GATE..."` form and `Get-Content` it to verify a real `.elb.amazonaws.com` URL is in there. |
+| Gate NLB shows "No security group associated" — can't edit rules | This is an older-style NLB; SGs are enforced at the **EKS worker nodes** instead, not the LB. Edit the worker nodes' SG (`eks-cluster-sg-spinnaker-...`) — Phase 6c has the exact steps. |
 | Pipeline fails on a perf/prod or BlazeMeter (Jenkins) stage | You imported the full `ems-deploy-cicd.json`. With only a dev environment and no Jenkins, import `ems-deploy-dev-only.json` instead. |
 | Actions "Configure AWS credentials" → `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `AWS_ROLE_ARN` variable wrong, or you pushed from a branch other than `main` (the OIDC trust in `github_oidc.tf` is scoped to `main`). |
 | Jib push fails `denied: not authorized` | The `github-actions-ems` role's ECR policy lives in `terraform/spinnaker` — make sure Phase 2 applied cleanly. |
