@@ -68,8 +68,50 @@ data "aws_iam_policy_document" "spinnaker_inline" {
   }
 
   statement {
-    sid       = "ReadConfigForTaskDefs"
-    actions   = ["ssm:GetParameter", "ssm:GetParameters", "secretsmanager:GetSecretValue"]
+    sid     = "ReadConfigForTaskDefs"
+    actions = ["ssm:GetParameter", "ssm:GetParameters", "secretsmanager:GetSecretValue"]
+    resources = ["*"]
+  }
+
+  # Spinnaker's caching agents (SecretCachingAgent, AmazonCertificateCachingAgent,
+  # etc.) inventory the account every minute. Without these List/Describe calls,
+  # the caches stay null and the ECS createServerGroup validator NPEs with
+  # "Cannot invoke Collection.size() because c is null".
+  statement {
+    sid     = "CachingAgentInventory"
+    actions = [
+      "secretsmanager:ListSecrets",
+      "secretsmanager:DescribeSecret",
+      "acm:ListCertificates",
+      "acm:DescribeCertificate",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeSubnets",
+      "ec2:DescribeVpcs",
+      "ec2:DescribeInstances",
+      "ec2:DescribeAvailabilityZones",
+      "ec2:DescribeKeyPairs",
+      "ec2:DescribeImages",
+      "elasticloadbalancing:DescribeLoadBalancers",
+      "elasticloadbalancing:DescribeTargetGroups",
+      "elasticloadbalancing:DescribeListeners",
+      "elasticloadbalancing:DescribeRules",
+      "elasticloadbalancing:DescribeTags",
+      "iam:ListRoles",
+      "iam:ListInstanceProfiles",
+      "iam:ListServerCertificates",
+      "ecs:ListClusters",
+      "ecs:DescribeClusters",
+      "ecs:ListServices",
+      "ecs:DescribeServices",
+      "ecs:ListTasks",
+      "ecs:DescribeTasks",
+      "ecs:ListTaskDefinitions",
+      "ecs:DescribeTaskDefinition",
+      "ecs:ListContainerInstances",
+      "ecs:DescribeContainerInstances",
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+    ]
     resources = ["*"]
   }
 
