@@ -1,12 +1,8 @@
-# ECR repository for the application's container images.
-# `force_delete = true` in non-prod so `terraform destroy` doesn't fail
-# when the repo still has images. Prod keeps it false so a stray destroy
-# can't wipe production images.
 
 resource "aws_ecr_repository" "app" {
   name                 = local.app
   image_tag_mutability = "MUTABLE"
-  force_delete         = var.env != "prod"
+  force_delete         = "false"
 
   image_scanning_configuration {
     scan_on_push = true

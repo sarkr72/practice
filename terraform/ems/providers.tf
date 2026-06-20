@@ -24,12 +24,6 @@ terraform {
   #
   # Pre-flight (one-time, manual): create the shared state bucket + lock table.
   # The same bucket also holds terraform/spinnaker state under a different key.
-  #   aws s3api create-bucket --bucket rinku-tfstate-001 --region us-east-1
-  #   aws s3api put-bucket-versioning --bucket rinku-tfstate-001 \
-  #     --versioning-configuration Status=Enabled
-  #   aws dynamodb create-table --table-name terraform-locks \
-  #     --attribute-definitions AttributeName=LockID,AttributeType=S \
-  #     --key-schema AttributeName=LockID,KeyType=HASH --billing-mode PAY_PER_REQUEST
   backend "s3" {
     bucket               = "rinku-tfstate-001"
     key                  = "ems/terraform.tfstate"

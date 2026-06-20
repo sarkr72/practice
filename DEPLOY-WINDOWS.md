@@ -304,7 +304,7 @@ cd ..\..\..\ems      # -> terraform\ems
 
 terraform init
 terraform workspace new dev          # first time only
-terraform apply -var-file=envs\dev.tfvars    # review, type: yes
+terraform apply -var-file="envs/dev.tfvars"   # review, type: yes
 ```
 
 Save the outputs Spinnaker and you will reference:

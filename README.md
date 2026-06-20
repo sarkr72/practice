@@ -6,7 +6,7 @@ Redis-backed sessions, full testing pyramid (unit + slice + Testcontainers IT),
 and a Jenkins → Jib → Spinnaker CI/CD pipeline targeting ECS Fargate.
 
 ## Stack
-
+  
 | Concern        | Choice                                                       |
 |----------------|--------------------------------------------------------------|
 | Language       | Java 21                                                      |
