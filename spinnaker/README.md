@@ -14,7 +14,15 @@ install — provisioning Spinnaker itself is in `terraform/spinnaker/`.
 3. **Create the Spinnaker application** — UI → Applications → Create:
    - Name: `ems`
    - Cloud providers: Amazon Web Services, Amazon ECS
-4. **Import this pipeline** — `spin pipeline save --file spinnaker/pipelines/ems-deploy-cicd.json`
+4. **Import a pipeline** — pick one:
+   - **First / learning deploy (recommended):**
+     `spin pipeline save --file spinnaker/pipelines/ems-deploy-dev-only.json`
+     — just Deploy-to-Dev. No Jenkins, no perf/prod stages, so a push-to-main
+     goes green with only the dev environment + GitHub Actions set up.
+   - **Full flow (later):**
+     `spin pipeline save --file spinnaker/pipelines/ems-deploy-cicd.json`
+     — adds perf + prod + manual approval. Needs the `aws-perf`/`aws-prod` ECS
+     accounts, those clusters, and (for the BlazeMeter stage) a Jenkins master.
 
 ## Pre-requisites in Spinnaker
 

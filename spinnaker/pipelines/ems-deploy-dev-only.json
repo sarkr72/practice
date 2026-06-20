@@ -1,0 +1,119 @@
+{
+  "_comment": [
+    "ems-deploy-dev-only.json — TRIMMED pipeline for a first / learning deploy.",
+    "",
+    "Import via: spin pipeline save --file spinnaker/pipelines/ems-deploy-dev-only.json",
+    "",
+    "Why this exists: the full ems-deploy-cicd.json has perf + prod stages and a",
+    "Jenkins-type BlazeMeter stage. With only a dev environment and no Jenkins,",
+    "those stages fail. This file keeps just the dev deploy so a push-to-main",
+    "actually goes green. Switch to ems-deploy-cicd.json once you add perf/prod.",
+    "",
+    "Flow:  Webhook (from GitHub Actions) -> Deploy to Dev (redblack)",
+    "",
+    "No explicit smoke-test stage: createServerGroup with redblack already waits",
+    "for the ECS tasks to pass the ALB target-group health check (/actuator/health)",
+    "before the stage succeeds, and rolls back on failure. Add a smoke webhook stage",
+    "pointed at your real ALB DNS later if you want an extra check.",
+    "",
+    "Required Spinnaker setup (one-time): register the ECS account 'aws-dev' and the",
+    "subnet attribute 'ecs-tasks-dev' in clouddriver; the SG / IAM roles / target",
+    "group it references are created by terraform/ems."
+  ],
+
+  "application": "ems",
+  "name": "ems-deploy-dev-only",
+  "keepWaitingPipelines": false,
+  "limitConcurrent": true,
+
+  "parameterConfig": [
+    { "name": "imageTag",    "required": true,  "description": "ECR image tag built by GitHub Actions" },
+    { "name": "branch",      "required": false, "description": "Source branch", "default": "main" },
+    { "name": "appId",       "required": false, "default": "APP-EMS-UNASSIGNED" },
+    { "name": "buildUrl",    "required": false, "description": "Link back to the GitHub Actions run" },
+    { "name": "ecrRegistry", "required": true,  "description": "<account>.dkr.ecr.<region>.amazonaws.com" },
+    { "name": "ecrRepo",     "required": false, "default": "ems" }
+  ],
+
+  "triggers": [
+    {
+      "enabled": true,
+      "type": "webhook",
+      "source": "ems-build-complete",
+      "payloadConstraints": {}
+    }
+  ],
+
+  "stages": [
+    {
+      "refId": "1",
+      "name": "Deploy to Dev",
+      "type": "createServerGroup",
+      "cloudProvider": "ecs",
+      "credentials": "aws-dev",
+      "region": "us-east-1",
+      "application": "ems",
+      "stack": "dev",
+      "ecsClusterName": "ems-dev",
+      "launchType": "FARGATE",
+      "platformVersion": "LATEST",
+      "computeUnits": 512,
+      "reservedMemory": 1024,
+      "containerInformation": {
+        "imageDescription": {
+          "imageId":    "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "registry":   "${parameters.ecrRegistry}",
+          "repository": "${parameters.ecrRepo}",
+          "tag":        "${parameters.imageTag}"
+        }
+      },
+      "containerPort": 8080,
+      "targetGroupMappings": [
+        {
+          "containerName": "ems",
+          "containerPort": 8080,
+          "targetGroup":   "ems-dev-stable"
+        }
+      ],
+      "networkMode": "awsvpc",
+      "subnetType":  "ecs-tasks-dev",
+      "securityGroups": ["ems-dev-tasks"],
+      "associatePublicIpAddress": true,
+      "iamRole":              "ems-dev-task-exec",
+      "taskRoleArn":          "ems-dev-task",
+      "taskDefinitionArtifact": null,
+      "containerDefinitions": [
+        {
+          "name":      "ems",
+          "image":     "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
+          "essential": true,
+          "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+          "environment": [
+            { "name": "SPRING_PROFILES_ACTIVE", "value": "dev" },
+            { "name": "APP_ID",                 "value": "${parameters.appId}" }
+          ],
+          "secrets": [
+            { "name": "DB_HOST",     "valueFrom": "/dev/ems/DB_HOST" },
+            { "name": "DB_PORT",     "valueFrom": "/dev/ems/DB_PORT" },
+            { "name": "DB_NAME",     "valueFrom": "/dev/ems/DB_NAME" },
+            { "name": "DB_USERNAME", "valueFrom": "/dev/ems/DB_USERNAME" },
+            { "name": "DB_PASSWORD", "valueFrom": "/dev/ems/DB_PASSWORD" }
+          ],
+          "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+              "awslogs-group":         "/ecs/ems-dev",
+              "awslogs-region":        "us-east-1",
+              "awslogs-stream-prefix": "ecs"
+            }
+          }
+        }
+      ],
+      "capacity": { "min": 1, "max": 3, "desired": 2 },
+      "strategy":          "redblack",
+      "maxRemainingAsgs":  2,
+      "rollback":          { "onFailure": true },
+      "scaleDown":         true
+    }
+  ]
+}
