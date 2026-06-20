@@ -341,7 +341,20 @@ Invoke-WebRequest "https://storage.googleapis.com/spinnaker-artifacts/spin/$ver/
 $env:PATH = "$spinDir;$env:PATH"
 
 # Tell spin where Gate is. NLB port is 80 (NOT 8084) — see 3e port warning.
-"gate:`n  endpoint: http://$($GATE)" | Out-File -Encoding ascii "$env:USERPROFILE\.spin\config"
+# IMPORTANT: $GATE must already hold the real Gate hostname from 3e.
+#   echo $GATE     -> should print something like  a1b2...elb.amazonaws.com
+# If it's blank (e.g. you opened a fresh window), re-grab it before continuing:
+#   $GATE = kubectl -n spinnaker get svc spin-gate -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+# Use this exact "...$VAR..." form (NOT a @"..."@ here-string with the literal
+# placeholder <gate-hostname>) — PowerShell only expands variables inside
+# double-quoted strings.
+"gate:`n  endpoint: http://$GATE" | Out-File -Encoding ascii "$env:USERPROFILE\.spin\config"
+
+# VERIFY the file holds the real hostname, not a placeholder:
+Get-Content "$env:USERPROFILE\.spin\config"
+# Expect:
+#   gate:
+#     endpoint: http://a1b2...elb.amazonaws.com
 
 # from the repo root: import the trimmed dev-only pipeline (recommended for
 # a learning run — the full ems-deploy-cicd.json has perf/prod and a
@@ -495,7 +508,7 @@ explains the *why* so you can reason about it, not just copy a fix.
 
 | Symptom | Why it happens / fix |
 |---|---|
-| `spin pipeline save` → can't reach Gate | The `~/.spin/config` Gate endpoint is wrong. The NLB is on port 80, not 8084 — use `http://<gate-host>` with no port. |
+| `spin pipeline save` → can't reach Gate | The `~/.spin/config` Gate endpoint is wrong. Two common causes: (a) NLB port is 80, not 8084 — use `http://<gate-host>` with no port; (b) you used a here-string (`@"..."@`) and the literal `<gate-hostname>` placeholder got written instead of the value. Fix: re-grab `$GATE` (`kubectl -n spinnaker get svc spin-gate -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'`), then write the file with the `"...$GATE..."` form and `Get-Content` it to verify a real `.elb.amazonaws.com` URL is in there. |
 | Pipeline fails on a perf/prod or BlazeMeter (Jenkins) stage | You imported the full `ems-deploy-cicd.json`. With only a dev environment and no Jenkins, import `ems-deploy-dev-only.json` instead. |
 | Actions "Configure AWS credentials" → `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `AWS_ROLE_ARN` variable wrong, or you pushed from a branch other than `main` (the OIDC trust in `github_oidc.tf` is scoped to `main`). |
 | Jib push fails `denied: not authorized` | The `github-actions-ems` role's ECR policy lives in `terraform/spinnaker` — make sure Phase 2 applied cleanly. |
