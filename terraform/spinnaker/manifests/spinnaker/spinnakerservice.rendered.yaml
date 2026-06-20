@@ -50,6 +50,8 @@ spec:
         # the pipeline JSON's credentials: aws-dev / aws-prod just work.
         ecs:
           enabled: true
+          # Halyard requires primaryAccount on every enabled provider ??? it'll
+          # NullPointerException without it.
           primaryAccount: aws-dev
           accounts:
             - name: aws-dev
@@ -66,7 +68,9 @@ spec:
       # Inbound webhook trigger from GitHub Actions. trust.enabled=false means
       # the X-Spinnaker-Token header is not enforced ??? fine for a learning
       # setup where the Gate LoadBalancer SG is locked to your IP. Set it to
-      # true and add a `webhooks.preflight` secret to require the token.
+      # true and add a `webhook.preflight` secret to require the token.
+      # Halconfig calls this key `webhook` (singular) ??? `webhooks` makes
+      # Halyard reject the config with "Unrecognized field".
       webhook:
         trust:
           enabled: false
@@ -111,5 +115,4 @@ metadata:
   namespace: spinnaker
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::148357194949:role/spinnaker-managed
-
 
