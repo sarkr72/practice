@@ -30,11 +30,18 @@ data "aws_iam_policy_document" "spinnaker_assume" {
   # Allow the role to assume itself. Spinnaker's clouddriver re-assumes its
   # own role at deploy time (per-account assumeRole pattern). Without this,
   # the deploy stage fails with AccessDenied on sts:AssumeRole.
+  #
+  # IMPORTANT: principal is the account ROOT, not the role ARN. Referencing
+  # the role's own ARN here fails on first create ("Invalid principal" /
+  # MalformedPolicyDocument) because the role doesn't exist yet. Trusting the
+  # account root sidesteps that chicken-and-egg. With root trust, the assuming
+  # identity ALSO needs sts:AssumeRole in its own policy — granted in the
+  # inline policy below (sid SelfAssume).
   statement {
     actions = ["sts:AssumeRole"]
     principals {
       type        = "AWS"
-      identifiers = ["arn:aws:iam::${var.aws_account_id}:role/spinnaker-managed"]
+      identifiers = ["arn:aws:iam::${var.aws_account_id}:root"]
     }
   }
 }
@@ -130,6 +137,16 @@ data "aws_iam_policy_document" "spinnaker_inline" {
     sid       = "EcrAuthAndPull"
     actions   = ["ecr:GetAuthorizationToken", "ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage", "ecr:DescribeImages", "ecr:DescribeRepositories", "ecr:ListImages"]
     resources = ["*"]
+  }
+
+  # Pairs with the account-root self-trust in the assume-role policy above.
+  # Because that trust is via the account root (not the explicit role ARN),
+  # AWS requires the assuming identity to ALSO be granted sts:AssumeRole on
+  # the target role. Scoped to this one role ARN.
+  statement {
+    sid       = "SelfAssume"
+    actions   = ["sts:AssumeRole"]
+    resources = ["arn:aws:iam::${var.aws_account_id}:role/spinnaker-managed"]
   }
 }
 
