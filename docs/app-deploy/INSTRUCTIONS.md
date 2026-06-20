@@ -157,6 +157,20 @@ Then re-import the Spinnaker pipeline:
 spin pipeline save --file E:\projects\practice\spinnaker\pipelines\ems-deploy-dev-only.json
 ```
 
+Refresh clouddriver's cache so it picks up the subnet `immutable_metadata`
+tag added by `terraform/ems` (skip only if you're certain clouddriver
+started **after** that terraform apply):
+
+```powershell
+kubectl -n spinnaker rollout restart deploy/spin-clouddriver
+kubectl -n spinnaker rollout status deploy/spin-clouddriver
+Start-Sleep -Seconds 120
+```
+
+Without this the first Spinnaker run NPEs in Monitor Deploy with
+`Cannot invoke "java.util.Collection.size()" because "c" is null`. ECS
+itself still deploys fine — only the Spinnaker stage fails.
+
 Next `git push origin main`:
 - GitHub Actions deploys to `ems-dev` (the real deploy).
 - Spinnaker runs in parallel, creates `ems-spinnaker-vNNN` on the canary

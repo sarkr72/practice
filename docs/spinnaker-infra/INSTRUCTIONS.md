@@ -263,6 +263,27 @@ spin pipeline save --file spinnaker\pipelines\ems-deploy-dev-only.json
 
 In Deck: **ems → Pipelines** → you should see `ems-deploy-dev-only`.
 
+### 4d — Refresh clouddriver's cache before the first trigger
+
+`spin-clouddriver` caches AWS inventory on startup. If Spinnaker started
+**before** `terraform/ems` added the subnet `immutable_metadata` tag — or
+you destroyed and re-applied terraform — the cache is missing the
+`subnetType → vpcId` mapping. The first pipeline run will then NPE in the
+Monitor Deploy stage with `Cannot invoke "java.util.Collection.size()"
+because "c" is null`.
+
+Force a re-cache once, right after Phase 4c:
+
+```powershell
+kubectl -n spinnaker rollout restart deploy/spin-clouddriver
+kubectl -n spinnaker rollout status deploy/spin-clouddriver
+Start-Sleep -Seconds 120   # let the caching agents complete one full cycle
+```
+
+You only need to do this when the subnet tags appeared after clouddriver
+last started — i.e., the first time on a fresh stack, and after any
+`terraform destroy` + re-apply.
+
 ---
 
 ## Tearing it all down (end of day)
@@ -291,7 +312,7 @@ terraform destroy        # type yes
 3. Phase 3a–c — kubectl operator + SpinnakerService.
 4. Phase 3d — wait for pods.
 5. Phase 3e — grab URLs.
-6. *(Optional Phase 4)* — Spinnaker app + pipeline.
+6. *(Optional Phase 4)* — Spinnaker app + pipeline + clouddriver cache refresh (4d).
 
 That's it. The 9 PRs of fixes are all in `main`, so a fresh clone should
 go end-to-end without the snags we hit live.
