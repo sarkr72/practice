@@ -85,17 +85,59 @@ data "aws_iam_policy_document" "github_actions" {
     resources = ["arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/ems"]
   }
 
-  # Read-only lookup of the Fargate networking IDs at deploy time so the
-  # Spinnaker pipeline doesn't need them hardcoded. Used by the "Resolve
-  # subnet + security group IDs" step in deploy.yml.
+  # Read-only inventory for deploy.yml's lookup step (VPC, subnets, SG,
+  # target group). Account-scoped read; these APIs require resources: "*".
   statement {
     sid = "DescribeNetworkingForDeploy"
     actions = [
       "ec2:DescribeSecurityGroups",
       "ec2:DescribeSubnets",
       "ec2:DescribeVpcs",
+      "elasticloadbalancing:DescribeTargetGroups",
     ]
     resources = ["*"]
+  }
+
+  # ECS deploy: register a new task definition revision and create/update the
+  # ems-dev service. Task def registration must be account-wide (the API takes
+  # resources: "*"); service mutations are scoped to the ems-dev service ARN.
+  statement {
+    sid = "EcsRegisterTaskDef"
+    actions = [
+      "ecs:RegisterTaskDefinition",
+      "ecs:DescribeTaskDefinition",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "EcsServiceDeploy"
+    actions = [
+      "ecs:CreateService",
+      "ecs:UpdateService",
+      "ecs:DescribeServices",
+      "ecs:ListServices",
+      "ecs:DescribeClusters",
+    ]
+    resources = [
+      "arn:aws:ecs:${var.aws_region}:${var.aws_account_id}:cluster/ems-*",
+      "arn:aws:ecs:${var.aws_region}:${var.aws_account_id}:service/ems-*/ems-*",
+    ]
+  }
+
+  # ECS needs to pass the task-exec and task roles into the running container.
+  statement {
+    sid = "PassEcsTaskRoles"
+    actions = ["iam:PassRole"]
+    resources = [
+      "arn:aws:iam::${var.aws_account_id}:role/ems-*-task",
+      "arn:aws:iam::${var.aws_account_id}:role/ems-*-task-exec",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
   }
 }
 
