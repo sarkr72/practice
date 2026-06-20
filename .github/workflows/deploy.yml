@@ -171,21 +171,6 @@ jobs:
             --services "${SERVICE}"
           echo "Deployment stable."
 
-      # -----------------------------------------------------------------------
-      # Optional: notify Spinnaker so the UI shows a deploy event. Best-effort
-      # only — a Spinnaker outage must not fail the deploy. Skipped entirely
-      # if SPINNAKER_GATE_URL is unset.
-      # -----------------------------------------------------------------------
-      - name: Notify Spinnaker (optional, best-effort)
-        if: ${{ vars.SPINNAKER_GATE_URL != '' }}
-        continue-on-error: true
-        run: |
-          curl -fsS -X POST "${{ vars.SPINNAKER_GATE_URL }}/webhooks/webhook/ems-build-complete" \
-            -H "X-Spinnaker-Token: ${{ secrets.SPINNAKER_WEBHOOK_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"parameters\":{\"imageTag\":\"${{ github.sha }}\",\"branch\":\"main\",\"ecrRegistry\":\"${{ steps.ecr.outputs.registry }}\",\"ecrRepo\":\"${{ env.ECR_REPO }}\",\"buildUrl\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}}" \
-            || echo "Spinnaker notify failed (non-fatal)."
-
       - name: Summary
         run: |
           {
