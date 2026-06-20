@@ -59,6 +59,11 @@
       "platformVersion": "LATEST",
       "computeUnits": 512,
       "reservedMemory": 1024,
+      "availabilityZones": {
+        "us-east-1": ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"]
+      },
+      "placementStrategySequence": [],
+      "dockerImageAddress": "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
       "containerInformation": {
         "imageDescription": {
           "imageId":    "${parameters.ecrRegistry}/${parameters.ecrRepo}:${parameters.imageTag}",
