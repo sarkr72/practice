@@ -58,8 +58,9 @@ data "aws_iam_policy_document" "spinnaker_inline" {
 
   statement {
     sid     = "PassEcsTaskRoles"
-    actions = ["iam:PassRole"]
-    # Spinnaker passes the ems task / task-execution roles into ECS RunTask.
+    actions = ["iam:PassRole", "iam:GetRole"]
+    # Spinnaker passes the ems task / task-execution roles into ECS RunTask,
+    # and calls GetRole on them while validating the task definition.
     resources = [
       "arn:aws:iam::${var.aws_account_id}:role/ems-*-task",
       "arn:aws:iam::${var.aws_account_id}:role/ems-*-task-exec",
