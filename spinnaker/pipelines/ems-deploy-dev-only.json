@@ -27,12 +27,14 @@
   "limitConcurrent": true,
 
   "parameterConfig": [
-    { "name": "imageTag",    "required": true,  "description": "ECR image tag built by GitHub Actions" },
-    { "name": "branch",      "required": false, "description": "Source branch", "default": "main" },
-    { "name": "appId",       "required": false, "default": "APP-EMS-UNASSIGNED" },
-    { "name": "buildUrl",    "required": false, "description": "Link back to the GitHub Actions run" },
-    { "name": "ecrRegistry", "required": true,  "description": "<account>.dkr.ecr.<region>.amazonaws.com" },
-    { "name": "ecrRepo",     "required": false, "default": "ems" }
+    { "name": "imageTag",       "required": true,  "description": "ECR image tag built by GitHub Actions" },
+    { "name": "branch",         "required": false, "description": "Source branch", "default": "main" },
+    { "name": "appId",          "required": false, "default": "APP-EMS-UNASSIGNED" },
+    { "name": "buildUrl",       "required": false, "description": "Link back to the GitHub Actions run" },
+    { "name": "ecrRegistry",    "required": true,  "description": "<account>.dkr.ecr.<region>.amazonaws.com" },
+    { "name": "ecrRepo",        "required": false, "default": "ems" },
+    { "name": "subnetIds",      "required": true,  "description": "Comma-separated subnet IDs for the Fargate tasks. Resolved by GitHub Actions from AWS so no clouddriver subnet-type registration is needed." },
+    { "name": "securityGroupId","required": true,  "description": "Security group ID (sg-...) for the Fargate tasks. Resolved by GitHub Actions." }
   ],
 
   "triggers": [
@@ -81,8 +83,8 @@
         }
       ],
       "networkMode": "awsvpc",
-      "subnetType":  "ecs-tasks-dev",
-      "securityGroups": ["ems-dev-tasks"],
+      "subnetType":  "${parameters.subnetIds}",
+      "securityGroups": ["${parameters.securityGroupId}"],
       "associatePublicIpAddress": true,
       "iamRole":              "ems-dev-task-exec",
       "taskRoleArn":          "ems-dev-task",
