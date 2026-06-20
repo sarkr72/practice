@@ -84,6 +84,19 @@ data "aws_iam_policy_document" "github_actions" {
     ]
     resources = ["arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/ems"]
   }
+
+  # Read-only lookup of the Fargate networking IDs at deploy time so the
+  # Spinnaker pipeline doesn't need them hardcoded. Used by the "Resolve
+  # subnet + security group IDs" step in deploy.yml.
+  statement {
+    sid = "DescribeNetworkingForDeploy"
+    actions = [
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeSubnets",
+      "ec2:DescribeVpcs",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "github_actions" {

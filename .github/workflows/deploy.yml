@@ -62,6 +62,27 @@ jobs:
           -Djib.to.image=${{ steps.ecr.outputs.registry }}/ems:${{ github.sha }}
           -Djib.to.tags=latest
 
+      # Discover the Fargate networking IDs at deploy time. The pipeline JSON
+      # references these via ${parameters.subnetIds} / ${parameters.securityGroupId}
+      # so we never need to (a) hardcode IDs in the JSON or (b) register a
+      # clouddriver-side subnet attribute in SpinnakerService.
+      - name: Resolve subnet + security group IDs for Fargate
+        id: net
+        run: |
+          set -euo pipefail
+          SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=ems-dev-tasks" \
+            --query "SecurityGroups[0].GroupId" --output text)
+          # Default VPC, AZs that EKS+ECS both support (excludes us-east-1e).
+          SUBNET_IDS=$(aws ec2 describe-subnets \
+            --filters "Name=vpc-id,Values=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)" \
+                      "Name=availability-zone,Values=us-east-1a,us-east-1b,us-east-1c,us-east-1d,us-east-1f" \
+            --query "Subnets[].SubnetId" --output text | tr '\t' ',')
+          echo "sg_id=$SG_ID"           >> "$GITHUB_OUTPUT"
+          echo "subnet_ids=$SUBNET_IDS" >> "$GITHUB_OUTPUT"
+          echo "Resolved SG  = $SG_ID"
+          echo "Resolved SNs = $SUBNET_IDS"
+
       - name: Trigger Spinnaker pipeline
         run: |
           curl -fsS -X POST "${{ vars.SPINNAKER_GATE_URL }}/webhooks/webhook/ems-build-complete" \
@@ -70,11 +91,13 @@ jobs:
             -d "$(cat <<JSON
           {
             "parameters": {
-              "imageTag":    "${{ github.sha }}",
-              "branch":      "main",
-              "ecrRegistry": "${{ steps.ecr.outputs.registry }}",
-              "ecrRepo":     "ems",
-              "buildUrl":    "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              "imageTag":         "${{ github.sha }}",
+              "branch":           "main",
+              "ecrRegistry":      "${{ steps.ecr.outputs.registry }}",
+              "ecrRepo":          "ems",
+              "buildUrl":         "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "subnetIds":        "${{ steps.net.outputs.subnet_ids }}",
+              "securityGroupId":  "${{ steps.net.outputs.sg_id }}"
             }
           }
           JSON
