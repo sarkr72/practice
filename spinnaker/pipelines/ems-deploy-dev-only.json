@@ -32,9 +32,7 @@
     { "name": "appId",          "required": false, "default": "APP-EMS-UNASSIGNED" },
     { "name": "buildUrl",       "required": false, "description": "Link back to the GitHub Actions run" },
     { "name": "ecrRegistry",    "required": true,  "description": "<account>.dkr.ecr.<region>.amazonaws.com" },
-    { "name": "ecrRepo",        "required": false, "default": "ems" },
-    { "name": "subnetIds",      "required": true,  "description": "Comma-separated subnet IDs for the Fargate tasks. Resolved by GitHub Actions from AWS so no clouddriver subnet-type registration is needed." },
-    { "name": "securityGroupId","required": true,  "description": "Security group ID (sg-...) for the Fargate tasks. Resolved by GitHub Actions." }
+    { "name": "ecrRepo",        "required": false, "default": "ems" }
   ],
 
   "triggers": [
@@ -55,7 +53,7 @@
       "credentials": "aws-dev",
       "region": "us-east-1",
       "application": "ems",
-      "stack": "dev",
+      "stack": "spinnaker",
       "ecsClusterName": "ems-dev",
       "launchType": "FARGATE",
       "platformVersion": "LATEST",
@@ -79,12 +77,12 @@
         {
           "containerName": "ems",
           "containerPort": 8080,
-          "targetGroup":   "ems-dev-stable"
+          "targetGroup":   "ems-dev-canary"
         }
       ],
       "networkMode": "awsvpc",
-      "subnetType":  "${parameters.subnetIds}",
-      "securityGroups": ["${parameters.securityGroupId}"],
+      "subnetType":  "ecs-tasks-dev",
+      "securityGroups": ["ems-dev-tasks"],
       "associatePublicIpAddress": true,
       "iamRole":              "ems-dev-task-exec",
       "taskRoleArn":          "ems-dev-task",
