@@ -9,6 +9,13 @@ data "aws_subnets" "default" {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
   }
+
+  # EKS control planes cannot run in us-east-1e. Restrict to the AZs EKS
+  # supports so the default-VPC subnet in 1e isn't handed to the cluster.
+  filter {
+    name   = "availability-zone"
+    values = ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"]
+  }
 }
 
 data "aws_caller_identity" "current" {}
