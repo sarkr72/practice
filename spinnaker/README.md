@@ -1,4 +1,15 @@
-# Spinnaker pipeline (ECS Fargate)
+# Spinnaker pipeline (ECS Fargate) — REFERENCE ONLY, NOT THE DEPLOYER
+
+> **These pipelines are not used for deploys.** Spinnaker's ECS integration
+> has long-standing caching bugs (`EcsSecurityGroupCachingAgent` never
+> populates → `createServerGroup` NPEs in `SecurityGroupSelector`, even with
+> explicit subnet/SG IDs). The actual deploy path is **`aws ecs` directly from
+> `.github/workflows/deploy.yml`** — see `DEPLOY-WINDOWS.md` Phase 7.
+>
+> These JSON files are kept as a reference for the red/black + canary pipeline
+> *shape* (useful if you ever deploy to Kubernetes via Spinnaker, where it
+> works well). Importing them and wiring the GitHub webhook will produce
+> failing executions — don't.
 
 Pipeline definition for the EMS app. Imports into an existing Spinnaker
 install — provisioning Spinnaker itself is in `terraform/spinnaker/`.
