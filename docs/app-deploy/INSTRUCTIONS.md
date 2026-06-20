@@ -178,7 +178,48 @@ Next `git push origin main`:
 
 ---
 
-## Quick "redo from scratch" checklist
+## Phase 6 — Tear down / pause the running app
+
+This workflow doesn't own any persistent AWS resources of its own — it just
+creates an ECS *service* (`ems-dev`) and *task definition revisions* inside
+the cluster owned by `terraform/ems` (`docs/app-infra`). So the right
+"teardown" depends on how cold you want to go:
+
+### Pause without losing anything (cheapest while keeping infra)
+
+Stop the tasks but keep the service, ALB target group bindings, RDS, ECR,
+and the cluster itself:
+
+```powershell
+aws ecs update-service --cluster ems-dev --service ems-dev --desired-count 0
+```
+
+Bill drops by the Fargate task cost (~$1/day). ALB + RDS keep ticking.
+Set `--desired-count 2` to resume — no rebuild, no redeploy needed.
+
+### Delete just the service (keep the cluster ready for redeploy)
+
+```powershell
+aws ecs update-service --cluster ems-dev --service ems-dev --desired-count 0
+aws ecs delete-service --cluster ems-dev --service ems-dev
+```
+
+The cluster, ALB, target groups, RDS, and ECR stay. Next `git push origin
+main` will re-create the service from scratch (the workflow's `describe-services`
+branch handles "service missing").
+
+### Full teardown
+
+There is no `terraform destroy` for this folder — destroy `app-infra` and
+the service vanishes with the cluster. See
+`docs/app-infra/INSTRUCTIONS.md` Phase 5.
+
+> Task definition revisions left behind by past deploys go INACTIVE after a
+> destroy but stay listed in the ECS console. They cost $0 and are useful
+> rollback archaeology — leave them.
+
+---
+
 
 1. `docs/spinnaker-infra/INSTRUCTIONS.md` Phase 1–2 (S3 bucket + EKS or
    just the GitHub OIDC role).

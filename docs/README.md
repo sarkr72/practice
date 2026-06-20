@@ -63,7 +63,8 @@ Run these in order, top to bottom:
 | Add a new AWS resource the app needs (queue, bucket, etc.) | `app-infra/README.md` → `terraform/ems/` file-by-file |
 | Change DB sizing or env-specific values | `app-infra/INSTRUCTIONS.md` + `terraform/ems/envs/*.tfvars` |
 | Spinnaker UI won't load or pods aren't healthy | `spinnaker-infra/DEBUG.md` |
-| Tear it all down for the night | `spinnaker-infra/INSTRUCTIONS.md` → "Tearing it all down" + `app-infra/INSTRUCTIONS.md` teardown |
+| Just pause the running app (cheap, fast resume) | `app-deploy/INSTRUCTIONS.md` Phase 6 → "Pause without losing anything" |
+| Tear it all down for the night | `spinnaker-infra/INSTRUCTIONS.md` → "Tearing it all down" + `app-infra/INSTRUCTIONS.md` Phase 5 |
 | Understand how `git push` becomes a running container | `app-deploy/README.md` → "Workflow architecture" |
 | Understand who can assume which IAM role | `app-deploy/README.md` → "Trust chain summary" |
 
