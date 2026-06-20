@@ -26,6 +26,17 @@ data "aws_iam_policy_document" "spinnaker_assume" {
       values   = ["sts.amazonaws.com"]
     }
   }
+
+  # Allow the role to assume itself. Spinnaker's clouddriver re-assumes its
+  # own role at deploy time (per-account assumeRole pattern). Without this,
+  # the deploy stage fails with AccessDenied on sts:AssumeRole.
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${var.aws_account_id}:role/spinnaker-managed"]
+    }
+  }
 }
 
 resource "aws_iam_role" "spinnaker" {
