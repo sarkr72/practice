@@ -139,24 +139,74 @@ kubectl get nodes        # should list 2 Ready nodes
 
 ## Phase 3 — Install Spinnaker on the cluster
 
+> **Big picture:** two things get installed, in order.
+> 1. The **Operator** = a robot that knows how to install/run Spinnaker.
+> 2. The **SpinnakerService** = the "order form" you hand the robot. The robot
+>    reads it and builds all the Spinnaker pods.
+>
+> Installing the Operator alone does NOT give you Spinnaker — you must also
+> apply the SpinnakerService (3c). Skipping 3c is the #1 mistake: the
+> `spinnaker` namespace stays empty and the UI URL comes back blank.
+
 ### 3a. Install the Spinnaker Operator
 
+The `manifests\operator\` folder only holds a namespace file — the actual
+operator is downloaded from its GitHub release. Run from `terraform\spinnaker`:
+
 ```powershell
-# from terraform\spinnaker
-kubectl apply -f manifests\operator\
+cd manifests\operator
+
+# 1. create the room (namespace) the operator lives in
+kubectl apply -f 00-namespace.yaml
+
+# 2. download the operator release. Windows 10/11 has curl.exe and tar built in.
+#    Use curl.exe (NOT plain "curl" — in PowerShell that's a different alias).
+$OPERATOR_VERSION = "1.4.0"
+curl.exe -L "https://github.com/armory/spinnaker-operator/releases/download/v$OPERATOR_VERSION/manifests.tgz" -o manifests.tgz
+tar -xzf manifests.tgz        # extracts a deploy\ folder here
+
+# 3. install: CRDs first, then the operator itself.
+#    Use the "cluster" flavor (NOT "kubernetes" — that folder doesn't exist)
+#    so the operator can watch the separate "spinnaker" namespace.
+kubectl apply -f deploy\crds\
+kubectl apply -n spinnaker-operator -f deploy\operator\cluster\
+
+# 4. wait until the operator pod is 2/2 Running before continuing
 kubectl -n spinnaker-operator rollout status deploy/spinnaker-operator
+kubectl -n spinnaker-operator get pods
 ```
 
-(If `manifests\operator\` only contains the namespace + a README, follow the
-upstream operator install in `manifests\operator\README.md` — it's a single
-`kubectl apply -k` against the published operator kustomize bundle.)
+### 3b. Create the Spinnaker namespace + grab the values the manifest needs
 
-### 3b. Render the SpinnakerService manifest (PowerShell — no envsubst needed)
+The SpinnakerService deploys into a `spinnaker` namespace that does NOT exist
+yet (the one you made in 3a was `spinnaker-operator` — a different room).
+
+```powershell
+kubectl create namespace spinnaker
+
+# back to terraform\spinnaker to read terraform outputs
+cd ..\..
+$ACCOUNT   = (aws sts get-caller-identity --query Account --output text)
+$REGION    = "us-east-1"
+$SPIN_ROLE = (terraform output -raw spinnaker_role_arn)
+$BUCKET    = (terraform output -raw persistence_bucket)
+
+# SANITY CHECK — none of these may be blank
+echo "ACCOUNT=$ACCOUNT  REGION=$REGION"
+echo "ROLE=$SPIN_ROLE"
+echo "BUCKET=$BUCKET"
+```
+
+If `ROLE` or `BUCKET` print blank, stop — `terraform output` didn't return
+(wrong folder or state). Applying a half-filled manifest deploys a broken
+Spinnaker.
+
+### 3c. Render + apply the SpinnakerService (the order form)
 
 ```powershell
 cd manifests\spinnaker
 
-# Read the template and substitute the placeholders
+# fill the __PLACEHOLDERS__ with the values from 3b (PowerShell — no envsubst)
 $svc = Get-Content spinnakerservice.yaml -Raw
 $svc = $svc.Replace('__AWS_ACCOUNT_ID__',     $ACCOUNT)
 $svc = $svc.Replace('__AWS_REGION__',          $REGION)
@@ -167,26 +217,77 @@ $svc | Out-File -Encoding ascii spinnakerservice.rendered.yaml
 kubectl apply -f spinnakerservice.rendered.yaml
 ```
 
-### 3c. Wait for it to come up (5–10 min)
+Expected: `spinnakerservice.spinnaker.io/spinnaker created`.
+
+> **If `failed calling webhook ... context deadline exceeded`** — the EKS
+> control plane can't reach the operator's validation webhook (common EKS
+> quirk: the control-plane→node path on the webhook port isn't open). The
+> webhook is only a pre-check; delete it and re-apply. The operator still
+> builds Spinnaker normally:
+> ```powershell
+> kubectl delete validatingwebhookconfiguration spinnakervalidatingwebhook
+> kubectl apply -f spinnakerservice.rendered.yaml
+> ```
+
+### 3d. Wait for it to come up — and watch the operator log if nothing appears (5–10 min)
 
 ```powershell
-kubectl -n spinnaker get spinnakerservice spinnaker -w
-# Ctrl+C once status settles, then:
-kubectl -n spinnaker get pods
+kubectl -n spinnaker get pods -w
 ```
 
-When `spin-deck` and `spin-gate` pods are `Running`, get their public hostnames
+The operator now builds the `spin-*` pods (deck, gate, clouddriver, orca,
+front50, echo…). Press Ctrl+C to stop watching once **`spin-deck`** and
+**`spin-gate`** show **`1/1 Running`**.
+
+> **If after ~3 min no pods appear**, the operator hit a Halyard error parsing
+> your SpinnakerService. Check Halyard's log (it lives in a *different
+> container* on the operator pod):
+> ```powershell
+> kubectl -n spinnaker-operator logs deploy/spinnaker-operator -c halyard --tail=300 > halyard.log
+> notepad halyard.log
+> ```
+> Search the file (Ctrl+F) for `ERROR` — the real cause is on that line, NOT
+> in the long Spring/Tomcat stack trace below it. Common ones we've hit:
+> - `Unrecognized field "X"` → a typo in `spinnakerservice.yaml`. Halconfig
+>   uses **`webhook`** (singular), not `webhooks`.
+> - `NullPointerException at ...Provider.getPrimaryAccount` → an enabled
+>   provider is missing `primaryAccount`. Add it.
+> - `S3 bucket not found` → `$BUCKET` was blank when you rendered. Re-render.
+>
+> The repo's template already has these fixes; this is for if you customize it.
+
+### 3e. Get the URLs
+
+When `spin-deck` and `spin-gate` are `Running`, get their public hostnames
 (these are AWS network load balancers):
 
 ```powershell
 $DECK = kubectl -n spinnaker get svc spin-deck -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
 $GATE = kubectl -n spinnaker get svc spin-gate -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-echo "Spinnaker UI:   http://$($DECK):9000"
-echo "Spinnaker Gate: http://$($GATE):8084"
+echo "Spinnaker UI:   http://$($DECK)"
+echo "Spinnaker Gate: http://$($GATE)"
 ```
 
-Open `http://<deck-host>:9000` in a browser. No login (auth is disabled — see
-the warning below).
+> **About the port — read this.** Spinnaker's pods listen on **9000** (deck)
+> and **8084** (gate), but the operator exposes them on the LoadBalancer's
+> **port 80**, like this:
+> ```
+> spin-deck  LoadBalancer  ...  PORT(S) 80:32068/TCP
+> spin-gate  LoadBalancer  ...  PORT(S) 80:32005/TCP
+> ```
+> So the right URLs are bare hostnames (`http://...elb.amazonaws.com`), NOT
+> `:9000` / `:8084`. Browsers and `curl` default to `:80`, which is what the
+> NLB is listening on. Add `:9000` and you'll get "connection refused."
+>
+> **Verify** with `kubectl -n spinnaker get svc spin-deck spin-gate` — the
+> `PORT(S)` column tells you which external port to use.
+
+> **If a URL prints blank (`http://`)** — the AWS load balancer doesn't have
+> an address yet. Either the `spin-*` pods aren't `Running` (wait), or AWS is
+> still provisioning the LB (`EXTERNAL-IP` shows `<pending>` for 2–3 min).
+
+Open the Deck URL in a browser. No login (auth is disabled — see the warning
+below).
 
 > **Security:** auth is off. Lock down the NLB security groups to **your IP
 > only** before doing anything else. In the EC2 console → Load Balancers →
@@ -222,7 +323,7 @@ without the other.
 
 ## Phase 5 — Configure Spinnaker (one time)
 
-In the Deck UI (`http://<deck-host>:9000`):
+In the Deck UI (the URL from 3e):
 
 1. **Applications → Create Application**
    - Name: `ems`
@@ -239,15 +340,30 @@ Invoke-WebRequest "https://storage.googleapis.com/spinnaker-artifacts/spin/$ver/
   -OutFile "$spinDir\spin.exe"
 $env:PATH = "$spinDir;$env:PATH"
 
-# Tell spin where Gate is
-"gate:`n  endpoint: http://$($GATE):8084" | Out-File -Encoding ascii "$env:USERPROFILE\.spin\config"
+# Tell spin where Gate is. NLB port is 80 (NOT 8084) — see 3e port warning.
+"gate:`n  endpoint: http://$($GATE)" | Out-File -Encoding ascii "$env:USERPROFILE\.spin\config"
 
-# from the repo root:
+# from the repo root: import the trimmed dev-only pipeline (recommended for
+# a learning run — the full ems-deploy-cicd.json has perf/prod and a
+# Jenkins-type BlazeMeter stage that fail without Jenkins or those envs).
 cd ..\..       # -> repo root
-spin pipeline save --file spinnaker\pipelines\ems-deploy-cicd.json
+spin pipeline save --file spinnaker\pipelines\ems-deploy-dev-only.json
 ```
 
-Refresh the UI → **ems → Pipelines** → you should see `ems-deploy-cicd`.
+Refresh the UI → **ems → Pipelines** → you should see `ems-deploy-dev-only`.
+
+Switch to `ems-deploy-cicd.json` (the full perf/prod flow) later, when you
+add those environments and a Jenkins for BlazeMeter.
+
+> **One Spinnaker-side tweak the pipeline needs.** The pipeline JSON
+> references a subnet attribute named `ecs-tasks-dev` (line: `subnetType`).
+> Spinnaker's clouddriver maps that name to the real subnet IDs at deploy
+> time. You register it in `clouddriver-local.yml` inside the SpinnakerService
+> spec under `spinnakerConfig.profiles.clouddriver.ecs.subnetTypes`, or the
+> deploy will fail at "Deploy to Dev" with "no subnets found." Quickest
+> learning workaround: in Deck → ems → Pipelines → Edit → Deploy to Dev
+> stage → set `subnetType` to the literal subnet IDs from Phase 4
+> (`terraform output subnet_ids`).
 
 ---
 
@@ -264,7 +380,7 @@ Go to **GitHub → your repo → Settings → Secrets and variables → Actions*
 |---------------------|----------------------------------------------------|
 | `AWS_ROLE_ARN`      | the `$ROLE_ARN` from Phase 2                        |
 | `AWS_REGION`        | `us-east-1`                                         |
-| `SPINNAKER_GATE_URL`| `http://<gate-host>:8084`  (the `$GATE` from 3c, **no trailing slash**) |
+| `SPINNAKER_GATE_URL`| `http://<gate-host>`  (the `$GATE` from 3e, **no port**, **no trailing slash** — see the 3e port warning) |
 
 **Secrets tab → New repository secret** (×1):
 
@@ -274,10 +390,10 @@ Go to **GitHub → your repo → Settings → Secrets and variables → Actions*
 
 > The Gate LoadBalancer SG must allow inbound from GitHub's runners for the
 > webhook to land. For a locked-down learning setup, either (a) temporarily
-> widen the Gate NLB SG to `0.0.0.0/0` on port 8084 only while testing, or
-> (b) trigger the Spinnaker pipeline manually from the UI and skip the webhook.
-> GitHub publishes its runner IP ranges at `https://api.github.com/meta` if you
-> want to scope it tightly.
+> widen the Gate NLB SG to `0.0.0.0/0` on **port 80** (that's the external
+> port — see 3e) only while testing, or (b) trigger the Spinnaker pipeline
+> manually from the UI and skip the webhook. GitHub publishes its runner IP
+> ranges at `https://api.github.com/meta` if you want to scope it tightly.
 
 ---
 
@@ -297,8 +413,9 @@ Watch the loop:
 
 1. **GitHub → Actions tab** — the `deploy` workflow runs: test → Jib build/push
    → "Trigger Spinnaker pipeline". ~3–6 min.
-2. **Spinnaker UI → ems → Pipelines** — an execution starts. For a `main` push
-   it runs Deploy Dev → Smoke Dev (and the prod stages gate on Manual Judgment).
+2. **Spinnaker UI → ems → Pipelines** — an execution starts. With the
+   dev-only pipeline imported, it runs just **Deploy to Dev** and stops there.
+   (Pre-merge of perf/prod work, you'd swap to `ems-deploy-cicd.json`.)
 3. **AWS Console → ECS → `ems-dev` cluster** — a new service/task revision
    appears and reaches `RUNNING`.
 4. **Verify it's live:**
@@ -345,12 +462,42 @@ destroyed — they're cheap and reusable. Delete them by hand if you're truly do
 
 ---
 
-## Troubleshooting
+## Troubleshooting — what can go wrong, and why
 
-| Symptom | Likely cause / fix |
+Real snags hit while building this, in the order you'd meet them. Each
+explains the *why* so you can reason about it, not just copy a fix.
+
+### Phase 2 — Terraform / EKS
+
+| Symptom | Why it happens / fix |
 |---|---|
-| Actions step "Configure AWS credentials" fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `AWS_ROLE_ARN` variable wrong, or you pushed from a branch other than `main` (trust is scoped to `main`). |
-| Jib push fails `denied: not authorized` | The `github-actions-ems` role's ECR policy is in `terraform/spinnaker` — make sure Phase 2 applied cleanly. |
-| Spinnaker execution never starts after Actions succeeds | `SPINNAKER_GATE_URL` wrong, or the Gate NLB SG is blocking GitHub runners (see Phase 6 note). Test the webhook reachability or trigger manually in the UI. |
+| `UnsupportedAvailabilityZoneException ... us-east-1e` while creating EKS | A **region** (us-east-1) is made of **zones** (1a, 1b…1f). EKS control planes don't support zone `1e`, but the default VPC has a subnet there. **Already fixed in the repo** (`data.tf` filters out 1e). If you use a different region/VPC and hit the same, exclude the unsupported zone the error names. |
+| `terraform apply` errors `bucket already exists` | S3 bucket names are **globally unique** across all AWS accounts. Pick a different name and update both `providers.tf` files. |
+| `Error acquiring the state lock` | You Ctrl+C'd a previous run before it released the DynamoDB lock. Copy the `ID` from the error and run `terraform force-unlock <ID>`. Safe as long as no other apply is truly running. |
+| Terraform keeps prompting `Enter a value: var.aws_account_id` | The `account.auto.tfvars` file is missing/empty (your `$ACCOUNT` was blank when you wrote it). Recreate it; `Get-Content account.auto.tfvars` should show 12 digits. |
+
+### Phase 3 — Operator / SpinnakerService
+
+| Symptom | Why it happens / fix |
+|---|---|
+| `kubectl apply -f 00-namespace.yaml` → `path does not exist` | You're in the wrong folder. That file is in `manifests\operator\`. `cd operator` first. |
+| `deploy\operator\kubernetes\ does not exist` | The operator tarball uses `basic\` and `cluster\`, not `kubernetes\`. Use `deploy\operator\cluster\` (cluster mode so it can watch the `spinnaker` namespace). |
+| `kubectl -n spinnaker get pods` → "No resources found" / blank URL | **You installed the operator but never applied the SpinnakerService.** The operator is just the installer; the SpinnakerService (3c) is what tells it to build Spinnaker. Do 3b + 3c. |
+| `failed calling webhook ... context deadline exceeded` when applying the SpinnakerService | The EKS **control plane can't reach the operator's validation webhook** (control-plane→node path on that port isn't open — common EKS quirk). The webhook is only a pre-check; delete it and re-apply: `kubectl delete validatingwebhookconfiguration spinnakervalidatingwebhook`. The operator still builds Spinnaker. |
+| `namespaces "spinnaker" not found` when applying the SpinnakerService | The `spinnaker` namespace doesn't exist yet (the one from 3a was `spinnaker-operator`, a different room). Run `kubectl create namespace spinnaker` first. |
+| SpinnakerService accepted but **no pods appear**; operator log shows `got halyard response status 500` | Halyard rejected the config. The **real error** is in the `halyard` container's log (not in `describe` and not in the Spring stack trace). `kubectl -n spinnaker-operator logs deploy/spinnaker-operator -c halyard --tail=300 > halyard.log; notepad halyard.log` and Ctrl+F for `ERROR` — read that line, NOT the 200 lines of Spring filters below it. |
+| Halyard log says `Unrecognized field "X"` | Typo in `spinnakerservice.yaml`. Halconfig uses **`webhook`** (singular), not `webhooks` — repo template already fixed. |
+| Halyard log says `NullPointerException ... Provider.getPrimaryAccount` | An enabled provider is missing `primaryAccount`. The ECS block needs `primaryAccount: aws-dev` — repo template already fixed. |
+| Browser/curl on `http://<host>:9000` → "connection refused" | The NLB exposes deck on **port 80**, not 9000 — the operator's `expose` config rewrites the port. `kubectl -n spinnaker get svc spin-deck spin-gate` shows `PORT(S) 80:32xxx/TCP`. Use the bare hostname (no port) for both Deck and Gate. |
+| UI/Gate URL prints `http://` (blank host) | The load balancer has no address yet. Either the `spin-*` pods aren't `Running` (wait), or AWS is still creating the LB (`EXTERNAL-IP` shows `<pending>` — wait 2–3 min). Not an error. |
+
+### Phase 5–7 — Spinnaker / GitHub Actions / deploy
+
+| Symptom | Why it happens / fix |
+|---|---|
+| `spin pipeline save` → can't reach Gate | The `~/.spin/config` Gate endpoint is wrong. The NLB is on port 80, not 8084 — use `http://<gate-host>` with no port. |
+| Pipeline fails on a perf/prod or BlazeMeter (Jenkins) stage | You imported the full `ems-deploy-cicd.json`. With only a dev environment and no Jenkins, import `ems-deploy-dev-only.json` instead. |
+| Actions "Configure AWS credentials" → `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `AWS_ROLE_ARN` variable wrong, or you pushed from a branch other than `main` (the OIDC trust in `github_oidc.tf` is scoped to `main`). |
+| Jib push fails `denied: not authorized` | The `github-actions-ems` role's ECR policy lives in `terraform/spinnaker` — make sure Phase 2 applied cleanly. |
+| Spinnaker execution never starts after Actions succeeds | `SPINNAKER_GATE_URL` wrong (must be the bare hostname, port 80 — see Phase 6), or the Gate NLB security group blocks GitHub's runners (see Phase 6 note). Test reachability, or trigger manually in the UI. |
 | ECS task stuck `PENDING` then dies | Check **CloudWatch → /ecs/ems-dev** logs. Usually a DB connection failure — confirm the RDS SG allows the tasks SG and the `DB_*` SSM params resolved. |
-| `terraform apply` errors `bucket already exists` | Someone has that global S3 name. Rename per the Phase 1 note. |
