@@ -41,18 +41,31 @@ wrong + why), and `README.md` (what every file/section does).
 
 ## Set-up order (from a clean clone + clean AWS account)
 
-1. **`spinnaker-infra/INSTRUCTIONS.md`**
-   - Phase 1: S3 state bucket + DynamoDB lock table (one time).
-   - Phase 2: `terraform apply` (creates EKS + the GitHub OIDC role).
-   - Phase 3: install Spinnaker. *(Skip Phase 3 if you only want the deploy
-     to work and don't care about the Spinnaker UI — Phase 2 still creates
-     the OIDC role the app deploy needs.)*
-2. **`app-infra/INSTRUCTIONS.md`**
-   - Phase 2: `terraform apply -var-file=envs/dev.tfvars` (ALB, ECS, RDS,
-     ECR, secrets, subnet tags).
-3. **`app-deploy/INSTRUCTIONS.md`**
-   - Phase 1: set `AWS_ROLE_ARN` + `AWS_REGION` GitHub variables.
-   - Phase 2: `git push origin main` → first deploy.
+Run these in order, top to bottom:
+
+| # | Where | What | Output you'll need next |
+|---|---|---|---|
+| 1 | `spinnaker-infra/INSTRUCTIONS.md` Phase 1 | One-time: create the S3 state bucket + DynamoDB lock table. | — |
+| 2 | `spinnaker-infra/INSTRUCTIONS.md` Phase 2 | `terraform apply` — creates EKS, IAM, and the GitHub OIDC role. | `github_actions_role_arn` output |
+| 3 | `spinnaker-infra/INSTRUCTIONS.md` Phase 3 | Install the Spinnaker control plane. **Skip if you don't want the Spinnaker UI** — Phase 2 alone is enough for the app deploy to work. | Deck/Gate NLB hostnames |
+| 4 | `app-infra/INSTRUCTIONS.md` Phase 2 | `terraform apply -var-file=envs/dev.tfvars` — ALB, ECS cluster, RDS, ECR, secrets, subnet tags. | role/SG/TG names, ECR URI |
+| 5 | `app-deploy/INSTRUCTIONS.md` Phase 1 | Set `AWS_ROLE_ARN` + `AWS_REGION` as GitHub repo variables. | — |
+| 6 | `app-deploy/INSTRUCTIONS.md` Phase 2 | `git push origin main` — first deploy. | Live app on the ALB URL |
+
+---
+
+## I just want to…
+
+| Question | Go to |
+|---|---|
+| Push code and see it deployed | `app-deploy/INSTRUCTIONS.md` |
+| My deploy failed, where do I look? | `app-deploy/DEBUG.md` |
+| Add a new AWS resource the app needs (queue, bucket, etc.) | `app-infra/README.md` → `terraform/ems/` file-by-file |
+| Change DB sizing or env-specific values | `app-infra/INSTRUCTIONS.md` + `terraform/ems/envs/*.tfvars` |
+| Spinnaker UI won't load or pods aren't healthy | `spinnaker-infra/DEBUG.md` |
+| Tear it all down for the night | `spinnaker-infra/INSTRUCTIONS.md` → "Tearing it all down" + `app-infra/INSTRUCTIONS.md` teardown |
+| Understand how `git push` becomes a running container | `app-deploy/README.md` → "Workflow architecture" |
+| Understand who can assume which IAM role | `app-deploy/README.md` → "Trust chain summary" |
 
 ---
 
@@ -66,15 +79,3 @@ pipeline that deploys to an isolated stack on the canary target group. It is
 bugs (documented in `spinnaker-infra/DEBUG.md`); this repo includes the fix
 (subnet `immutable_metadata` tags) but still keeps direct-ECS as the
 production path — which is what most teams running Spinnaker on AWS do.
-
----
-
-## Where the deep-dive lifecycle docs went
-
-Earlier versions of this repo had `docs/REQUEST-LIFECYCLE.md`,
-`STARTUP-LIFECYCLE.md`, `DEPLOY-LIFECYCLE.md`, and `SYSTEM-MAP.md`. Their
-content is folded into the three-folder structure:
-- Request/startup internals → the app's own code is the reference now.
-- Deploy lifecycle → `app-deploy/README.md` (workflow architecture section).
-- System map (cross-file contracts) → the "Boundary with other folders"
-  section in each folder's `README.md`.
