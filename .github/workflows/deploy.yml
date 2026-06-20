@@ -1,31 +1,47 @@
-# Push to main  ->  build image (Jib -> ECR)  ->  trigger Spinnaker  ->  ECS Fargate.
+# Push to main  ->  build image (Jib -> ECR)  ->  deploy to ECS Fargate.
 #
-# No AWS keys are stored in GitHub: the job mints a short-lived credential by
-# assuming the `github-actions-ems` role via OIDC (see terraform/spinnaker/
-# github_oidc.tf). Spinnaker performs the actual ECS deploy after the webhook.
+# The actual deployer is `aws ecs` (register-task-definition + update-service).
+# This was chosen over Spinnaker's createServerGroup after running into long-
+# standing Spinnaker-on-ECS limitations (EcsSecurityGroupCachingAgent doesn't
+# populate, so SecurityGroupSelector NPEs even with explicit IDs). Direct ECS
+# is what most teams use in production for Fargate workloads; Spinnaker is
+# best at Kubernetes.
+#
+# Idempotent: works on the FIRST push (creates the service) and every push
+# after (updates it). Deletes nothing. ECS handles the rolling deploy via its
+# own deployment controller — no Spinnaker stages required.
+#
+# No AWS keys are stored in GitHub: the job mints short-lived credentials by
+# assuming the `github-actions-ems` role via OIDC.
 #
 # Required GitHub config (Settings -> Secrets and variables -> Actions):
 #   Variables:
-#     AWS_ROLE_ARN          terraform output github_actions_role_arn
-#     AWS_REGION            us-east-1
-#     SPINNAKER_GATE_URL    http://<spin-gate-loadbalancer-host>   (no trailing slash)
-#   Secrets:
-#     SPINNAKER_WEBHOOK_TOKEN   any shared string; must match echo.webhooks.defaultSecret
+#     AWS_ROLE_ARN   terraform output github_actions_role_arn (terraform/spinnaker)
+#     AWS_REGION     us-east-1
 
 name: deploy
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:        # lets you trigger a deploy by hand from the Actions tab
+  workflow_dispatch:        # manual trigger from the Actions tab
 
 permissions:
   id-token: write           # required for OIDC role assumption
   contents: read
 
-concurrency:                # one deploy at a time; newer push cancels an in-flight one
+concurrency:                # one deploy at a time
   group: deploy-main
   cancel-in-progress: false
+
+env:
+  AWS_REGION:   us-east-1
+  CLUSTER:      ems-dev
+  SERVICE:      ems-dev
+  CONTAINER:    ems
+  TARGET_GROUP: ems-dev-stable
+  SG_NAME:      ems-dev-tasks
+  ECR_REPO:     ems
 
 jobs:
   build-and-deploy:
@@ -47,7 +63,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region:     ${{ vars.AWS_REGION }}
 
       - name: Log in to Amazon ECR
         id: ecr
@@ -59,52 +75,122 @@ jobs:
       - name: Build and push image with Jib
         run: >-
           ./mvnw -B -ntp compile jib:build
-          -Djib.to.image=${{ steps.ecr.outputs.registry }}/ems:${{ github.sha }}
+          -Djib.to.image=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}
           -Djib.to.tags=latest
 
-      # Discover the Fargate networking IDs at deploy time. The pipeline JSON
-      # references these via ${parameters.subnetIds} / ${parameters.securityGroupId}
-      # so we never need to (a) hardcode IDs in the JSON or (b) register a
-      # clouddriver-side subnet attribute in SpinnakerService.
-      - name: Resolve subnet + security group IDs for Fargate
-        id: net
+      # -----------------------------------------------------------------------
+      # Look up the networking + ALB target group + AWS account live, so the
+      # task def + service-create commands don't carry environment-specific IDs.
+      # -----------------------------------------------------------------------
+      - name: Discover AWS account, VPC, subnets, security group, target group
+        id: lookup
         run: |
           set -euo pipefail
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters Name=isDefault,Values=true \
+            --query 'Vpcs[0].VpcId' --output text)
           SG_ID=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=ems-dev-tasks" \
-            --query "SecurityGroups[0].GroupId" --output text)
-          # Default VPC, AZs that EKS+ECS both support (excludes us-east-1e).
+            --filters "Name=group-name,Values=${SG_NAME}" \
+            --query 'SecurityGroups[0].GroupId' --output text)
+          # AZs both EKS and ECS support (excludes us-east-1e).
           SUBNET_IDS=$(aws ec2 describe-subnets \
-            --filters "Name=vpc-id,Values=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)" \
+            --filters "Name=vpc-id,Values=${VPC_ID}" \
                       "Name=availability-zone,Values=us-east-1a,us-east-1b,us-east-1c,us-east-1d,us-east-1f" \
-            --query "Subnets[].SubnetId" --output text | tr '\t' ',')
-          echo "sg_id=$SG_ID"           >> "$GITHUB_OUTPUT"
-          echo "subnet_ids=$SUBNET_IDS" >> "$GITHUB_OUTPUT"
-          echo "Resolved SG  = $SG_ID"
-          echo "Resolved SNs = $SUBNET_IDS"
+            --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+          TG_ARN=$(aws elbv2 describe-target-groups \
+            --names "${TARGET_GROUP}" \
+            --query 'TargetGroups[0].TargetGroupArn' --output text)
+          {
+            echo "account=$ACCOUNT"
+            echo "vpc_id=$VPC_ID"
+            echo "sg_id=$SG_ID"
+            echo "subnet_ids=$SUBNET_IDS"
+            echo "tg_arn=$TG_ARN"
+          } >> "$GITHUB_OUTPUT"
+          echo "VPC=$VPC_ID  SG=$SG_ID  TG=$TG_ARN"
+          echo "Subnets: $SUBNET_IDS"
 
-      - name: Trigger Spinnaker pipeline
+      - name: Render task definition
+        run: |
+          set -euo pipefail
+          IMAGE="${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}"
+          sed -e "s|__ACCOUNT__|${{ steps.lookup.outputs.account }}|g" \
+              -e "s|__IMAGE__|${IMAGE}|g" \
+              ecs/taskdef.dev.json.tpl > taskdef.json
+          echo "Rendered task definition:"
+          cat taskdef.json
+
+      - name: Register new task definition revision
+        id: register
+        run: |
+          set -euo pipefail
+          TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://taskdef.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "td_arn=$TD_ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered: $TD_ARN"
+
+      - name: Create or update the ECS service (idempotent)
+        run: |
+          set -euo pipefail
+          STATUS=$(aws ecs describe-services \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}" \
+            --query 'services[0].status' --output text 2>/dev/null || echo "MISSING")
+
+          if [ "$STATUS" = "ACTIVE" ]; then
+            echo "Service ${SERVICE} exists — rolling out new task definition"
+            aws ecs update-service \
+              --cluster "${CLUSTER}" \
+              --service "${SERVICE}" \
+              --task-definition "${{ steps.register.outputs.td_arn }}" \
+              --force-new-deployment \
+              > /dev/null
+          else
+            echo "Service ${SERVICE} does not exist — creating"
+            aws ecs create-service \
+              --cluster "${CLUSTER}" \
+              --service-name "${SERVICE}" \
+              --task-definition "${{ steps.register.outputs.td_arn }}" \
+              --desired-count 2 \
+              --launch-type FARGATE \
+              --platform-version LATEST \
+              --network-configuration "awsvpcConfiguration={subnets=[${{ steps.lookup.outputs.subnet_ids }}],securityGroups=[${{ steps.lookup.outputs.sg_id }}],assignPublicIp=ENABLED}" \
+              --load-balancers "targetGroupArn=${{ steps.lookup.outputs.tg_arn }},containerName=${CONTAINER},containerPort=8080" \
+              --health-check-grace-period-seconds 60 \
+              --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
+              > /dev/null
+          fi
+
+      - name: Wait for service to stabilize
+        run: |
+          echo "Waiting for tasks to roll out and pass ALB health checks..."
+          aws ecs wait services-stable \
+            --cluster "${CLUSTER}" \
+            --services "${SERVICE}"
+          echo "Deployment stable."
+
+      # -----------------------------------------------------------------------
+      # Optional: notify Spinnaker so the UI shows a deploy event. Best-effort
+      # only — a Spinnaker outage must not fail the deploy. Skipped entirely
+      # if SPINNAKER_GATE_URL is unset.
+      # -----------------------------------------------------------------------
+      - name: Notify Spinnaker (optional, best-effort)
+        if: ${{ vars.SPINNAKER_GATE_URL != '' }}
+        continue-on-error: true
         run: |
           curl -fsS -X POST "${{ vars.SPINNAKER_GATE_URL }}/webhooks/webhook/ems-build-complete" \
             -H "X-Spinnaker-Token: ${{ secrets.SPINNAKER_WEBHOOK_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "$(cat <<JSON
-          {
-            "parameters": {
-              "imageTag":         "${{ github.sha }}",
-              "branch":           "main",
-              "ecrRegistry":      "${{ steps.ecr.outputs.registry }}",
-              "ecrRepo":          "ems",
-              "buildUrl":         "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-              "subnetIds":        "${{ steps.net.outputs.subnet_ids }}",
-              "securityGroupId":  "${{ steps.net.outputs.sg_id }}"
-            }
-          }
-          JSON
-          )"
+            -d "{\"parameters\":{\"imageTag\":\"${{ github.sha }}\",\"branch\":\"main\",\"ecrRegistry\":\"${{ steps.ecr.outputs.registry }}\",\"ecrRepo\":\"${{ env.ECR_REPO }}\",\"buildUrl\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}}" \
+            || echo "Spinnaker notify failed (non-fatal)."
 
       - name: Summary
         run: |
-          echo "### Deployed image" >> $GITHUB_STEP_SUMMARY
-          echo "\`${{ steps.ecr.outputs.registry }}/ems:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "Spinnaker pipeline **ems-deploy-cicd** triggered." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "### Deployed"
+            echo "Image: \`${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}\`"
+            echo "Task definition: \`${{ steps.register.outputs.td_arn }}\`"
+            echo "Cluster/Service: \`${{ env.CLUSTER }} / ${{ env.SERVICE }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

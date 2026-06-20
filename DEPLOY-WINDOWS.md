@@ -1,6 +1,6 @@
 # End-to-end deployment runbook (Windows)
 
-Stand up the infra, install Spinnaker, then get the **push-to-main → auto-deploy**
+Stand up the infra, then get the **push-to-main → auto-deploy**
 loop working. Every command is PowerShell. Run them from a regular PowerShell
 window (not cmd). Copy blocks one at a time and read the comments.
 
@@ -8,21 +8,35 @@ window (not cmd). Copy blocks one at a time and read the comments.
 git push origin main
    │
    ▼
-GitHub Actions   build + test, Jib pushes image to ECR (auth via OIDC, no keys)
-   │  POST webhook
+GitHub Actions
+   • test + Jib build + push image to ECR
+   • aws ecs register-task-definition  (new revision)
+   • aws ecs update-service (or create-service on first run)
+   • aws ecs wait services-stable
+   │
    ▼
-Spinnaker (on EKS)   createServerGroup (red/black)
-   ▼
-ECS Fargate   new task revision goes live behind the ALB
+ECS Fargate   rolling deploy, ALB starts routing traffic to the new tasks
 ```
 
-**Ownership:** Terraform owns the immutable platform (EKS for Spinnaker, plus
-the EMS ALB / ECS cluster / RDS / ECR / IAM / secrets). Spinnaker owns the ECS
-**services and task definitions** — it creates them on the first pipeline run.
+**Ownership:** Terraform owns the immutable platform (ALB, ECS cluster, RDS,
+ECR, IAM, secrets). GitHub Actions owns the ECS **service + task definitions**
+— created on the first push, updated on every subsequent push. Idempotent.
 
-> **Cost warning.** This runs an EKS cluster (2× t3.large), an RDS instance, an
-> ALB, and 2 network load balancers. Ballpark **$10–15/day** left running. Tear
-> down with the Phase 9 steps when you're done for the day.
+> **About Spinnaker:** Phases 2–3 install a real Spinnaker on EKS for learning,
+> but it is NOT in the deploy path. Spinnaker-on-ECS has long-standing caching
+> bugs (`EcsSecurityGroupCachingAgent` never populates → `SecurityGroupSelector`
+> NPEs) that bite anyone who tries to use `createServerGroup` for Fargate.
+> Most production teams use `aws ecs` directly for Fargate and reserve
+> Spinnaker for Kubernetes — that's the pattern this repo follows.
+>
+> **If you don't care about learning Spinnaker, skip Phases 2 and 3** —
+> deploy.yml needs only Phase 1, 4, 6, 7 to work. Phase 2's `terraform
+> apply` is still needed because it creates the GitHub OIDC role (but you
+> can drop everything else in `terraform/spinnaker` if you want a truly
+> minimal setup later).
+
+> **Cost warning.** Full setup runs an EKS cluster (2× t3.large), RDS, an ALB,
+> and 2 NLBs. Ballpark **$10–15/day** left running. Phase 9 tears it down.
 
 ---
 
@@ -321,7 +335,12 @@ without the other.
 
 ---
 
-## Phase 5 — Configure Spinnaker (one time)
+## Phase 5 — Configure Spinnaker (OPTIONAL — for learning/visibility only)
+
+> Spinnaker is **not** the deployer (see "About Spinnaker" at the top).
+> Skip this whole phase if you just want a working push-to-deploy. The app
+> deploys via `aws ecs` in Phase 7 regardless. Phase 5 only sets up Spinnaker
+> to **observe** deploys via the optional Slack-style notification webhook.
 
 In the Deck UI (the URL from 3e):
 
@@ -382,88 +401,53 @@ add those environments and a Jenkins for BlazeMeter.
 
 ## Phase 6 — Wire GitHub Actions (the auto-deploy trigger)
 
-The workflow `.github/workflows/deploy.yml` is already in the repo. Three setup
-steps: get the values, save them to GitHub, open the network so GitHub can reach
-Spinnaker.
+The workflow `.github/workflows/deploy.yml` is already in the repo. Two setup
+steps: get the role ARN, save it on GitHub.
 
-### 6a. Gather the exact values to paste
+### 6a. Gather the values
 
-In PowerShell, from `terraform\spinnaker`:
+In PowerShell, from `terraform\spinnaker` (the OIDC role is owned by that root):
 
 ```powershell
 cd E:\projects\practice\terraform\spinnaker
-
-# the ARN for the app deploy role (NOT the infra one, NOT the spinnaker one)
 $ROLE_ARN = (terraform output -raw github_actions_role_arn)
 
-# the Gate hostname (from 3e — re-grab if blank)
-$GATE = kubectl -n spinnaker get svc spin-gate -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-
-# any random string — not enforced right now
-$WEBHOOK_TOKEN = [guid]::NewGuid().ToString()
-
-# print the four values to paste
-"AWS_ROLE_ARN              = $ROLE_ARN"
-"AWS_REGION                = us-east-1"
-"SPINNAKER_GATE_URL        = http://$GATE"
-"SPINNAKER_WEBHOOK_TOKEN   = $WEBHOOK_TOKEN"
+"AWS_ROLE_ARN  = $ROLE_ARN"
+"AWS_REGION    = us-east-1"
 ```
 
 > **Which ARN is "the" ARN?** You may see several roles in the spinnaker outputs.
-> The one for GitHub Actions building+pushing images is
-> **`github_actions_role_arn`** (no `_infra`). The others are for the infra
-> workflow, Spinnaker itself, or ECS tasks — don't paste those here.
+> The one for GitHub Actions building + deploying is **`github_actions_role_arn`**
+> (no `_infra`). The others are for the infra workflow, Spinnaker itself, or
+> ECS tasks — don't paste those here.
 
 ### 6b. Save them on GitHub
 
-GitHub → repo → **Settings → Secrets and variables → Actions**.
+GitHub → repo → **Settings → Secrets and variables → Actions → Variables tab → New repository variable**:
 
-**Variables tab → New repository variable** (×3):
+| Name           | Value           |
+|----------------|-----------------|
+| `AWS_ROLE_ARN` | `$ROLE_ARN`     |
+| `AWS_REGION`   | `us-east-1`     |
 
-| Name                | Value (from 6a)         |
-|---------------------|-------------------------|
-| `AWS_ROLE_ARN`      | `$ROLE_ARN`             |
-| `AWS_REGION`        | `us-east-1`             |
-| `SPINNAKER_GATE_URL`| `http://$GATE` (no port, no trailing slash — see 3e port warning) |
+That's it for the required config. The workflow handles everything else.
 
-**Secrets tab → New repository secret** (×1):
+### 6c. Optional — Spinnaker notification
 
-| Name                      | Value                  |
-|---------------------------|------------------------|
-| `SPINNAKER_WEBHOOK_TOKEN` | `$WEBHOOK_TOKEN`       |
+If you also did Phase 3 + 5 (Spinnaker for visibility), add these so the
+workflow posts a deploy event to Spinnaker. Workflow continues without them.
 
-### 6c. Open the network so GitHub can reach Spinnaker Gate
-
-The Gate NLB needs to accept inbound HTTP from GitHub's runners on **port 80**
-(the external port — see 3e). Two paths depending on what AWS shows you:
-
-**If the Gate NLB has a security group in its console page**, edit that SG and
-add: Type `Custom TCP`, Port `80`, Source `0.0.0.0/0`. Done.
-
-**If the Gate NLB shows "No security group associated"** (common — older-style
-NLB), traffic is gated at the **EKS worker nodes** instead. Open *their* SG:
-
+In `terraform\spinnaker`:
 ```powershell
-# get any one EKS worker node name
-kubectl get nodes -o jsonpath='{.items[0].metadata.name}'
+$GATE = kubectl -n spinnaker get svc spin-gate -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+$WEBHOOK_TOKEN = [guid]::NewGuid().ToString()
+"SPINNAKER_GATE_URL      = http://$GATE"
+"SPINNAKER_WEBHOOK_TOKEN = $WEBHOOK_TOKEN"
 ```
 
-Then in AWS Console:
-1. **EC2 → Instances** → search/paste that node name → click the instance.
-2. **Security** tab → click the security group link (named like
-   `eks-cluster-sg-spinnaker-...`).
-3. **Inbound rules → Edit inbound rules → Add rule:**
-   - Type: **Custom TCP**
-   - Port: **80**
-   - Source: **0.0.0.0/0**
-4. **Save rules.**
-
-> **Safer (later):** Source `0.0.0.0/0` lets the whole internet hit your Gate.
-> Fine for a learning run while NLB auth is off. To scope it down, replace the
-> source with GitHub's published runner IP ranges from
-> `https://api.github.com/meta` (the `actions` array). Or skip this step
-> entirely and trigger the pipeline manually from the Deck UI — no inbound
-> rule needed.
+Add `SPINNAKER_GATE_URL` as a Variable and `SPINNAKER_WEBHOOK_TOKEN` as a
+Secret. Plus open the Gate NLB (EKS worker nodes' SG) for inbound TCP 80 —
+see the original Phase 6c steps in git history if you want it locked down.
 
 ---
 
@@ -472,38 +456,72 @@ Then in AWS Console:
 From your laptop:
 
 ```powershell
-cd practice
-# make a change, e.g. edit README, then:
+cd E:\projects\practice
+# make any change, then:
 git add .
 git commit -m "test: trigger first auto-deploy"
 git push origin main
 ```
 
-Watch the loop:
+What happens (idempotent — same flow on first push and every push after):
 
-1. **GitHub → Actions tab** — the `deploy` workflow runs: test → Jib build/push
-   → "Trigger Spinnaker pipeline". ~3–6 min.
-2. **Spinnaker UI → ems → Pipelines** — an execution starts. With the
-   dev-only pipeline imported, it runs just **Deploy to Dev** and stops there.
-   (Pre-merge of perf/prod work, you'd swap to `ems-deploy-cicd.json`.)
-3. **AWS Console → ECS → `ems-dev` cluster** — a new service/task revision
-   appears and reaches `RUNNING`.
-4. **Verify it's live:**
+1. **GitHub → Actions tab** — the `deploy` workflow runs:
+   - test → Jib build → push image to ECR as `ems:<commit-sha>`
+   - look up VPC / subnets / SG / target group ARN / account
+   - render `ecs/taskdef.dev.json.tpl` with the new image
+   - `aws ecs register-task-definition` → new revision
+   - `aws ecs create-service` (first push) **or** `aws ecs update-service --force-new-deployment` (later pushes)
+   - `aws ecs wait services-stable` → blocks until rollout is healthy
+   - ~5–8 min total.
+2. **AWS Console → ECS → `ems-dev` cluster** — service shows the new task definition, tasks rolling.
+3. **Verify it's live:**
    ```powershell
+   cd E:\projects\practice\terraform\ems
+   $ALB = (terraform output -raw alb_url)
    curl "$ALB/actuator/health"      # -> {"status":"UP"}
    ```
 
-That's the full CI/CD loop. Every subsequent `git push origin main` repeats
-steps 1–4 automatically.
+> Every subsequent `git push origin main` repeats steps 1–3 automatically.
+
+### Where the deploy logic lives
+
+- **`ecs/taskdef.dev.json.tpl`** — task definition template. `__ACCOUNT__` and
+  `__IMAGE__` placeholders get substituted by the workflow.
+- **`.github/workflows/deploy.yml`** — the workflow. Builds the image, renders
+  the task def, registers it, updates the service.
+- **`terraform/spinnaker/github_oidc.tf`** — grants the GitHub Actions role
+  the AWS permissions needed (ECR push, EC2/ELB describe, ECS register/update
+  scoped to `ems-*`, IAM PassRole scoped to `ems-*-task*`).
+
+### If you ever need to redo this from scratch
+
+1. Phase 1 (S3 + DynamoDB) — one-time.
+2. Phase 2 (`terraform/spinnaker` apply) — creates the GitHub OIDC role with all
+   the ECR + ECS + IAM PassRole perms needed.
+3. Phase 3–5 — skip if you don't want Spinnaker.
+4. Phase 4 (`terraform/ems` apply) — creates the ALB, ECS cluster (empty), RDS,
+   ECR, IAM roles, secrets, log group.
+5. Phase 6 — set `AWS_ROLE_ARN` and `AWS_REGION` GitHub Variables.
+6. `git push origin main` — first push creates the ECS service.
 
 ---
 
 ## Phase 8 — Rollback
 
-In the Spinnaker UI → **ems → Clusters**, select the previous server group →
-**Enable**, then disable the bad one. Red/black keeps the prior version around
-(`maxRemainingAsgs=2`) specifically for this one-click rollback. Nothing to
-script.
+ECS keeps every task definition revision, so rollback is one CLI call:
+
+```powershell
+# list recent revisions
+aws ecs list-task-definitions --family-prefix ems-dev --sort DESC --max-items 5
+
+# roll the service back to a previous revision (paste a known-good ARN)
+aws ecs update-service --cluster ems-dev --service ems-dev `
+  --task-definition arn:aws:ecs:us-east-1:<account>:task-definition/ems-dev:<n> `
+  --force-new-deployment
+```
+
+ECS does a rolling deploy back to that revision (maxPercent=200/minHealthy=100,
+configured in `deploy.yml`). No data loss, ~2–3 min.
 
 ---
 
