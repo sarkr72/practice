@@ -7,7 +7,7 @@
 # is what most teams use in production for Fargate workloads; Spinnaker is
 # best at Kubernetes.
 #
-# The ECS service is owned by Terraform (terraform/ems/service.tf); this
+# The ECS service is owned by Terraform (terraform/ems-app/service.tf); this
 # workflow only rolls a new task-definition revision onto it. Works on the
 # first push and every push after — Terraform's service ignores task_definition,
 # so this update sticks and is never reverted. Deletes nothing. ECS handles the
@@ -80,7 +80,7 @@ jobs:
 
       # -----------------------------------------------------------------------
       # The service's networking, ALB wiring and desired count are owned by
-      # Terraform (terraform/ems/service.tf). This workflow only needs the AWS
+      # Terraform (terraform/ems-app/service.tf). This workflow only needs the AWS
       # account id to render the task-definition template.
       # -----------------------------------------------------------------------
       - name: Discover AWS account

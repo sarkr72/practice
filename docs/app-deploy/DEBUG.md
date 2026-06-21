@@ -142,13 +142,12 @@ the AWS account discovery step failed.
 ## ECS — Roll out task definition
 
 ### `ServiceNotFoundException` / `update-service` says the service doesn't exist
-**Why:** The `ems-dev` service is created by Terraform (`terraform/ems/
-service.tf`), not by this workflow — the workflow only rolls a new task def
-onto it. If the service is missing, the infra layer hasn't been applied for
+**Why:** The `ems-dev` service is created by Terraform (`terraform/ems-app/service.tf`), not by this workflow — the workflow only rolls a new task def
+onto it. If the service is missing, the `ems-app` layer hasn't been applied for
 this environment yet.
 
-**Fix:** apply app-infra first (Actions → "infra" → ems / apply / dev, or
-`docs/app-infra/INSTRUCTIONS.md` Phase 2), then re-run the deploy. Confirm:
+**Fix:** apply the platform then app layers first (Actions → "infra" → ems /
+apply / dev, then ems-app / apply / dev), then re-run the deploy. Confirm:
 ```powershell
 aws ecs describe-services --cluster ems-dev --services ems-dev --query "services[0].status" --output text
 # should print ACTIVE

@@ -23,10 +23,11 @@ on:
   workflow_dispatch:
     inputs:
       stack:
-        description: "Which Terraform root to run"
+        description: "Which Terraform layer to run (apply order: ems -> ems-app; destroy order: ems-app -> ems)"
         type: choice
         options:
-          - ems
+          - ems        # platform layer: cluster, ALB, IAM, RDS, ECR, secrets
+          - ems-app    # app layer: ECS service (reads ems outputs via remote state)
           - spinnaker
         required: true
       action:
@@ -38,7 +39,7 @@ on:
         default: plan
         required: true
       env:
-        description: "Environment (ems stack only; ignored for spinnaker)"
+        description: "Environment (ems / ems-app stacks; ignored for spinnaker)"
         type: choice
         options:
           - dev
@@ -82,14 +83,17 @@ jobs:
 
           terraform init -input=false
 
-          # The ems stack is per-environment (workspaces + tfvars); spinnaker is single.
-          if [ "${{ inputs.stack }}" = "ems" ]; then
-            terraform workspace select "${{ inputs.env }}" 2>/dev/null \
-              || terraform workspace new "${{ inputs.env }}"
-            VAR_ARGS="-var-file=envs/${{ inputs.env }}.tfvars"
-          else
-            VAR_ARGS=""
-          fi
+          # ems + ems-app are per-environment (workspaces + tfvars); spinnaker is single.
+          case "${{ inputs.stack }}" in
+            ems|ems-app)
+              terraform workspace select "${{ inputs.env }}" 2>/dev/null \
+                || terraform workspace new "${{ inputs.env }}"
+              VAR_ARGS="-var-file=envs/${{ inputs.env }}.tfvars"
+              ;;
+            *)
+              VAR_ARGS=""
+              ;;
+          esac
 
           if [ "${{ inputs.action }}" = "apply" ]; then
             terraform apply -input=false -auto-approve $VAR_ARGS

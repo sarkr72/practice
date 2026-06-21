@@ -127,30 +127,49 @@ Each env gets:
 
 ## Phase 5 — Tear down (end of day)
 
+Teardown is **two layers, app first** (the app layer holds the service; the
+platform layer holds the cluster/ALB/RDS it depends on). The helper script does
+both in order:
+
 ```powershell
-cd E:\projects\practice\terraform\ems
-terraform workspace select dev
-terraform destroy -var-file=envs\dev.tfvars      # type: yes
+cd E:\projects\practice
+bash scripts/deploy.sh dev destroy        # destroys ems-app, then ems
+# or to keep the database and just stop the app:
+bash scripts/deploy.sh dev destroy-app    # destroys ONLY ems-app
 ```
 
-That's the whole teardown — one command, no manual pre-steps. Everything that
-could block destroy is a node in the Terraform graph, so it comes down in the
-right order with the provider's own waiters:
+By hand it's the reverse of apply:
 
-- **The ECS service** (`ems-dev`) is a Terraform resource (`service.tf`), so
-  destroy drains its tasks first, waits for the Fargate ENIs to detach, then
-  drops the tasks security group and the cluster. No
-  `ClusterContainsServicesException`, no `DependencyViolation` — and no
-  destroy-time provisioner. (The task-definition *revisions* the deploy
-  workflow registered just go INACTIVE; they don't block anything and cost $0.)
+```powershell
+cd terraform\ems-app
+terraform workspace select dev
+terraform destroy -var-file=envs\dev.tfvars   # app first
+
+cd ..\ems
+terraform workspace select dev
+terraform destroy -var-file=envs\dev.tfvars   # then platform
+```
+
+Why this is clean, no manual pre-steps:
+
+- **The ECS service** (`ems-dev`) is a Terraform resource in the `ems-app`
+  layer. Destroying that layer drains its tasks first and waits for the Fargate
+  ENIs to detach. Then the platform destroy drops the tasks security group and
+  cluster with no `ClusterContainsServicesException` / `DependencyViolation` —
+  and no destroy-time provisioner. (CD-registered task-def revisions just go
+  INACTIVE; they block nothing and cost $0.)
+- **"Stop the app, keep the data"** is now a first-class operation:
+  `destroy-app` removes only the `ems-app` layer; the RDS database in the
+  platform layer's separate state is untouched.
 - **The ECR repo** still holds images at teardown. `ecr.tf` sets
   `force_delete` for non-prod (`var.env != "prod"`) so destroy removes it
   cleanly; prod keeps `force_delete = false` so a stray destroy can't wipe
   release images (empty it by hand first if you really mean it).
-- **In prod**, destroy is intentionally NOT a single command: RDS
+- **In prod**, the platform destroy intentionally is NOT one command: RDS
   (`deletion_protection`) and the ALB (`enable_deletion_protection`) are
-  protected. Flip both to `false` and apply before you can destroy prod — the
-  guardrail is the point.
+  protected. Flip both to `false` and apply before you can destroy the prod
+  platform — the guardrail is the point. (The `ems-app` layer still destroys
+  cleanly in prod.)
 
 Order matters if Spinnaker is also running: tear down `terraform/ems`
 *before* `terraform/spinnaker`, because spinnaker references the ems

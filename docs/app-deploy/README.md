@@ -31,8 +31,7 @@ git push origin main
 ECS Fargate   rolling deploy, ALB serves the new version
 ```
 
-The service itself is created and owned by Terraform (`terraform/ems/
-service.tf`); this workflow only rolls a new task-def revision onto it.
+The service itself is created and owned by Terraform (`terraform/ems-app/service.tf`); this workflow only rolls a new task-def revision onto it.
 Terraform ignores the service's `task_definition`, so the rollout sticks and is
 never reverted. Each push gets a fresh OIDC credential from AWS — no static keys
 stored in GitHub.
@@ -109,8 +108,8 @@ runner needed.
 Looks up only the AWS account ID (via `aws sts get-caller-identity`), written
 to `$GITHUB_OUTPUT` for the task-def render step. The VPC / subnets / security
 group / target group lookups are gone — that wiring now lives on the
-Terraform-owned service (`terraform/ems/service.tf`), so the deploy workflow no
-longer touches networking at all.
+Terraform-owned service (`terraform/ems-app/service.tf`), so the deploy workflow
+no longer touches networking at all.
 
 #### Step 8: Render task definition (lines 103–110)
 Reads `ecs/taskdef.dev.json.tpl`, replaces `__ACCOUNT__` with the looked-up
@@ -132,7 +131,7 @@ Terraform-owned service at the freshly registered task-def revision.
   because Terraform created it. Everything that used to be passed to
   `create-service` (launch type, network config, ALB mapping, 60s health-check
   grace period, `maxPercent=200 / minHealthyPercent=100`) now lives in
-  `terraform/ems/service.tf` and is owned there.
+  `terraform/ems-app/service.tf` and is owned there.
 
 #### Step 11: Wait for stable (lines 151–155)
 `aws ecs wait services-stable` blocks until the rollout completes. Polls

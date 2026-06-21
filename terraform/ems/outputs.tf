@@ -14,13 +14,13 @@ output "alb_dns_name" {
 }
 
 output "ecs_cluster" {
-  description = "ECS cluster name (referenced by `ecsClusterName` in the Spinnaker pipeline)."
+  description = "ECS cluster name (consumed by the app layer + Spinnaker pipeline)."
   value       = aws_ecs_cluster.main.name
 }
 
-output "ecs_service" {
-  description = "ECS service name — the deploy workflow rolls new task defs onto this with `update-service`."
-  value       = aws_ecs_service.app.name
+output "ecs_cluster_arn" {
+  description = "ECS cluster ARN — the app layer sets the service's `cluster` to this."
+  value       = aws_ecs_cluster.main.arn
 }
 
 output "target_group_stable_arn" {

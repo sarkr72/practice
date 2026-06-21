@@ -48,6 +48,7 @@ provider "aws" {
       env       = var.env
       managedBy = "terraform"
       owner     = "rinku"
+      layer     = "platform"
     }
   }
 }

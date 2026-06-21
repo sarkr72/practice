@@ -117,14 +117,13 @@ issue, etc.).
 
 ## Phase 3 — Verification
 
-### `aws ecs list-services --cluster ems-dev` — what to expect
-**Why:** After `terraform apply`, the cluster already has the `ems-dev` service
-— Terraform creates it from `service.tf`. Its tasks run the bootstrap
-placeholder image and sit UNHEALTHY behind the ALB until the first deploy.
-That's expected, not a failure.
+### `aws ecs list-services --cluster ems-dev` returns `serviceArns: []`
+**Why:** Expected after applying ONLY the platform layer (`terraform/ems`). The
+service lives in the `ems-app` layer — apply that and the `ems-dev` service
+appears (running the bootstrap task def, UNHEALTHY until the first deploy).
 
-**Fix:** none needed. The first `git push` to `main` rolls the real image on
-and the tasks go healthy.
+**Fix:** `cd terraform/ems-app && terraform apply -var-file=envs/dev.tfvars`.
+Then the first `git push` rolls the real image on and the tasks go healthy.
 
 ---
 
