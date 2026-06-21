@@ -1,7 +1,7 @@
-# Outputs are the contract between terraform-managed platform and the
-# Spinnaker-managed app. After `terraform apply`, the values here are what
-# you paste into the Spinnaker pipeline JSON's stable references (or, if you
-# prefer, into Spinnaker's clouddriver config so they can be looked up by name).
+# Outputs are the contract between the Terraform-managed platform and its
+# consumers. After `terraform apply`, the deploy workflow targets `ecs_cluster`
+# + `ecs_service`; the optional Spinnaker pipeline reads the target group / SG /
+# subnet / role names below.
 
 output "alb_url" {
   description = "Public URL of the load balancer."
@@ -16,6 +16,11 @@ output "alb_dns_name" {
 output "ecs_cluster" {
   description = "ECS cluster name (referenced by `ecsClusterName` in the Spinnaker pipeline)."
   value       = aws_ecs_cluster.main.name
+}
+
+output "ecs_service" {
+  description = "ECS service name — the deploy workflow rolls new task defs onto this with `update-service`."
+  value       = aws_ecs_service.app.name
 }
 
 output "target_group_stable_arn" {

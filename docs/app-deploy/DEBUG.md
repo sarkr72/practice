@@ -139,19 +139,19 @@ the AWS account discovery step failed.
 
 ---
 
-## ECS — Create or update service
+## ECS — Roll out task definition
 
-### `Invalid request provided: CreateService`
-**Why:** A field in the create-service call is wrong. Common causes:
-- The target group ARN belongs to a different VPC than the subnets.
-- The SG is in a different VPC than the subnets.
-- The cluster is in a different region than the rest.
+### `ServiceNotFoundException` / `update-service` says the service doesn't exist
+**Why:** The `ems-dev` service is created by Terraform (`terraform/ems/
+service.tf`), not by this workflow — the workflow only rolls a new task def
+onto it. If the service is missing, the infra layer hasn't been applied for
+this environment yet.
 
-**Fix:** confirm all live in `us-east-1` and the default VPC:
+**Fix:** apply app-infra first (Actions → "infra" → ems / apply / dev, or
+`docs/app-infra/INSTRUCTIONS.md` Phase 2), then re-run the deploy. Confirm:
 ```powershell
-aws elbv2 describe-target-groups --names ems-dev-stable --query "TargetGroups[0].VpcId" --output text
-aws ec2 describe-security-groups --filters "Name=group-name,Values=ems-dev-tasks" --query "SecurityGroups[0].VpcId" --output text
-# both should match the default VPC ID
+aws ecs describe-services --cluster ems-dev --services ems-dev --query "services[0].status" --output text
+# should print ACTIVE
 ```
 
 ---

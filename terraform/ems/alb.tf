@@ -18,6 +18,11 @@ resource "aws_lb" "main" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = data.aws_subnets.default.ids
+
+  # On in prod so a stray `terraform destroy` can't take the ALB down; off in
+  # non-prod so teardown stays a single clean command. Mirrors the RDS
+  # deletion_protection gating.
+  enable_deletion_protection = var.env == "prod"
 }
 
 resource "aws_lb_target_group" "stable" {

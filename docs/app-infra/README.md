@@ -19,7 +19,8 @@ terraform/ems/
    ECR repo               ← image lives here
    ALB + stable + canary  ← public entry point
    target groups            (stable=live traffic; canary=Spinnaker uses)
-   ECS cluster "ems-dev"  ← EMPTY by design. The deploy fills it.
+   ECS cluster "ems-dev"  ← the box
+   ECS service "ems-dev"  ← runs the app (bootstrap task def; deploy fills it)
    IAM roles               (task + task-exec)
    security groups         (ALB ↔ tasks ↔ DB)
    RDS MySQL              ← persistence
@@ -29,10 +30,14 @@ terraform/ems/
 
 Two important boundaries:
 
-1. **Terraform creates the CLUSTER, not the service.** The ECS *service +
-   task definitions* are created by the deploy workflow (see
-   `docs/app-deploy/`). This means re-running terraform never disturbs a
-   running app, and re-deploying the app never modifies infrastructure.
+1. **Terraform owns the cluster AND the service; the deploy workflow owns the
+   task-definition revisions.** The service (`service.tf`) is a Terraform
+   resource so `terraform destroy` tears it down in graph order — but it carries
+   `ignore_changes = [task_definition, desired_count]`, so re-running terraform
+   never disturbs a running app and the deploy workflow's rollouts are never
+   reverted. Terraform owns the service's *shape* (networking, ALB wiring,
+   rollout policy); the deploy workflow owns *what's running in it* (see
+   `docs/app-deploy/`).
 2. **The Spinnaker subnet tag is here**, in `app-infra`, even though it's
    *for* Spinnaker. That's because the tag goes on the default-VPC subnets
    the app uses — Terraform's `ems` root is what queries those subnets, so
@@ -65,7 +70,7 @@ Two important boundaries:
 | `ecs.tf` | The ECS cluster (`ems-<env>`) with container insights, capacity providers FARGATE + FARGATE_SPOT, and the CloudWatch log group `/ecs/ems-<env>` with env-dependent retention (30 days in prod, 7 in dev). | Cluster = empty box. Log group = where every task's stdout/stderr ends up. |
 | `iam.tf` | Two IAM roles: `ems-<env>-task-exec` (used by the ECS *agent* to pull the image and read secrets — attaches `AmazonECSTaskExecutionRolePolicy`) and `ems-<env>-task` (the app's runtime role — empty for now, add S3/SQS/etc. perms here as the app grows). | Separation: image-pulling and secret-reading happen as one identity; the app itself runs as a separate identity with no AWS access by default. |
 | `ecr.tf` | The container image registry. `force_delete = var.env != "prod"` so `terraform destroy` doesn't fail on a repo that still holds images (non-prod); prod stays `false` to protect release images. Lifecycle policy: expire untagged after 7 days, keep last 10 tagged. | The image shelf the deploy workflow pushes to. |
-| `teardown.tf` | A `null_resource` with a destroy-time `local-exec` provisioner that drains + deletes the ECS service (`ems-<env>`) before the cluster and tasks SG are destroyed. | The service is created by the deploy workflow, not Terraform, so without this `terraform destroy` fails with `ClusterContainsServicesException` / `DependencyViolation`. This makes destroy a single command. |
+| `service.tf` | The ECS Fargate **service** (`ems-<env>`) plus a **bootstrap task definition**. The service wires the tasks SG, both ALB stable target group, a 60s health-check grace period, rolling-deploy config (max 200% / min 100%) and a deployment circuit breaker with auto-rollback. It carries `lifecycle { ignore_changes = [task_definition, desired_count] }`. | Making the service a Terraform resource is what makes `terraform destroy` clean: the provider drains tasks, waits out the Fargate ENIs (no `DependencyViolation`), then drops the cluster (no `ClusterContainsServicesException`) — all in graph order, no destroy provisioner. The bootstrap task def lets the service be created on an empty ECR; the deploy workflow replaces it on first push. |
 | `rds.tf` | RDS MySQL primary (`ems-<env>-primary`), optional read replica, DB subnet group, DB security group (allows MySQL :3306 from the tasks SG only), a `random_password` (32 chars) stored in the Secrets Manager secret from `secrets.tf`, env-dependent backup retention (7 days prod, 1 day non-prod), deletion protection on prod, performance insights on prod, a custom MySQL 8.0 parameter group with slow query log on. | The database. SG-locked-to-tasks means even if someone gets your AWS console creds, they can't connect to your DB from a laptop. |
 | `secrets.tf` | SSM parameters for non-sensitive config (`/<env>/ems/DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`), Secrets Manager for sensitive (`DB_PASSWORD` always; `JWT_SECRET` prod-only). A read policy on the SSM params + secrets ARNs is attached to the `task-execution` role so the ECS agent can fetch them at task start. | Split: non-sensitive things change with infra and belong in SSM. Real secrets need KMS encryption + rotation + 30-day recovery in prod — Secrets Manager. |
 | `spinnaker_subnet_tags.tf` | An `aws_ec2_tag` resource (for each default-VPC subnet) that adds an `immutable_metadata` tag with JSON value `{"purpose":"ecs-tasks-<env>","target":"ec2"}`. | This is what lets Spinnaker resolve `subnetType: "ecs-tasks-dev"` to the actual subnet IDs. Without it, Spinnaker's `SecurityGroupSelector` NPEs (see `docs/spinnaker-infra/DEBUG.md` for the full story). If you don't use Spinnaker, this tag is harmless — nothing else reads it. |
@@ -96,14 +101,17 @@ Two important boundaries:
    - looks up data sources (data.tf → default VPC + subnets).
    - builds resource dep graph and creates AWS things in order:
        network → alb / iam / ecr / ecs / rds / secrets
+       → service (cluster + ALB + IAM must exist first)
        → spinnaker_subnet_tags
    - writes new state to s3://rinku-tfstate-001/env:/dev/ems/terraform.tfstate
    - runs outputs.tf → prints alb_url, ecs_cluster, role ARNs, etc.
 
 4. AWS:
-   You now have: an empty ECS cluster, an ALB with two target groups, an
-   RDS MySQL ready for connections, an ECR repo waiting for images, IAM
-   roles ready to be assumed, secrets stored, subnets tagged for Spinnaker.
+   You now have: an ECS cluster running the service on the bootstrap task def
+   (tasks sit unhealthy until the first deploy — expected), an ALB with two
+   target groups, an RDS MySQL ready for connections, an ECR repo waiting for
+   images, IAM roles ready to be assumed, secrets stored, subnets tagged for
+   Spinnaker.
 
 5. NEXT: the deploy workflow (docs/app-deploy/) puts a running app on top.
 ```

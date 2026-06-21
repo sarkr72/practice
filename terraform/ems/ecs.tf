@@ -1,5 +1,10 @@
 # ---------------------------------------------------------------------------
-# ECS cluster. Spinnaker creates the services and task definitions per deploy.
+# ECS cluster + log group.
+#
+# The cluster is the "empty box". The service that runs in it lives in
+# service.tf (Terraform-owned). Task-definition *revisions* are registered by
+# the deploy workflow on each push — Terraform only provides the initial
+# bootstrap revision so the service can be created on a fresh environment.
 # ---------------------------------------------------------------------------
 
 resource "aws_ecs_cluster" "main" {
@@ -21,9 +26,9 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
   }
 }
 
-# One log group per environment. Spinnaker's task definition awslogs config
-# points at /ecs/ems-<env>; canary and stable share the group but use
-# different stream prefixes ('stable' / 'canary').
+# One log group per environment. The deploy workflow's task definition points
+# its awslogs config at /ecs/ems-<env> (stream prefix 'ecs'); the bootstrap
+# task uses the 'bootstrap' prefix in the same group.
 resource "aws_cloudwatch_log_group" "service" {
   name              = "/ecs/${local.app}-${var.env}"
   retention_in_days = var.env == "prod" ? 30 : 7

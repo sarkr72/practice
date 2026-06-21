@@ -7,9 +7,11 @@
 # is what most teams use in production for Fargate workloads; Spinnaker is
 # best at Kubernetes.
 #
-# Idempotent: works on the FIRST push (creates the service) and every push
-# after (updates it). Deletes nothing. ECS handles the rolling deploy via its
-# own deployment controller — no Spinnaker stages required.
+# The ECS service is owned by Terraform (terraform/ems/service.tf); this
+# workflow only rolls a new task-definition revision onto it. Works on the
+# first push and every push after — Terraform's service ignores task_definition,
+# so this update sticks and is never reverted. Deletes nothing. ECS handles the
+# rolling deploy via its own deployment controller — no Spinnaker stages required.
 #
 # No AWS keys are stored in GitHub: the job mints short-lived credentials by
 # assuming the `github-actions-ems` role via OIDC.
@@ -35,13 +37,11 @@ concurrency:                # one deploy at a time
   cancel-in-progress: false
 
 env:
-  AWS_REGION:   us-east-1
-  CLUSTER:      ems-dev
-  SERVICE:      ems-dev
-  CONTAINER:    ems
-  TARGET_GROUP: ems-dev-stable
-  SG_NAME:      ems-dev-tasks
-  ECR_REPO:     ems
+  AWS_REGION: us-east-1
+  CLUSTER:    ems-dev
+  SERVICE:    ems-dev
+  CONTAINER:  ems
+  ECR_REPO:   ems
 
 jobs:
   build-and-deploy:
@@ -79,37 +79,17 @@ jobs:
           -Djib.to.tags=latest
 
       # -----------------------------------------------------------------------
-      # Look up the networking + ALB target group + AWS account live, so the
-      # task def + service-create commands don't carry environment-specific IDs.
+      # The service's networking, ALB wiring and desired count are owned by
+      # Terraform (terraform/ems/service.tf). This workflow only needs the AWS
+      # account id to render the task-definition template.
       # -----------------------------------------------------------------------
-      - name: Discover AWS account, VPC, subnets, security group, target group
+      - name: Discover AWS account
         id: lookup
         run: |
           set -euo pipefail
           ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-          VPC_ID=$(aws ec2 describe-vpcs \
-            --filters Name=isDefault,Values=true \
-            --query 'Vpcs[0].VpcId' --output text)
-          SG_ID=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=${SG_NAME}" \
-            --query 'SecurityGroups[0].GroupId' --output text)
-          # AZs both EKS and ECS support (excludes us-east-1e).
-          SUBNET_IDS=$(aws ec2 describe-subnets \
-            --filters "Name=vpc-id,Values=${VPC_ID}" \
-                      "Name=availability-zone,Values=us-east-1a,us-east-1b,us-east-1c,us-east-1d,us-east-1f" \
-            --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
-          TG_ARN=$(aws elbv2 describe-target-groups \
-            --names "${TARGET_GROUP}" \
-            --query 'TargetGroups[0].TargetGroupArn' --output text)
-          {
-            echo "account=$ACCOUNT"
-            echo "vpc_id=$VPC_ID"
-            echo "sg_id=$SG_ID"
-            echo "subnet_ids=$SUBNET_IDS"
-            echo "tg_arn=$TG_ARN"
-          } >> "$GITHUB_OUTPUT"
-          echo "VPC=$VPC_ID  SG=$SG_ID  TG=$TG_ARN"
-          echo "Subnets: $SUBNET_IDS"
+          echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
+          echo "AWS account: $ACCOUNT"
 
       - name: Render task definition
         run: |
@@ -131,37 +111,19 @@ jobs:
           echo "td_arn=$TD_ARN" >> "$GITHUB_OUTPUT"
           echo "Registered: $TD_ARN"
 
-      - name: Create or update the ECS service (idempotent)
+      # The service is created and owned by Terraform; this just rolls the new
+      # task-definition revision onto it. Terraform ignores the service's
+      # task_definition, so the change sticks and is never reverted.
+      - name: Roll out new task definition
         run: |
           set -euo pipefail
-          STATUS=$(aws ecs describe-services \
+          aws ecs update-service \
             --cluster "${CLUSTER}" \
-            --services "${SERVICE}" \
-            --query 'services[0].status' --output text 2>/dev/null || echo "MISSING")
-
-          if [ "$STATUS" = "ACTIVE" ]; then
-            echo "Service ${SERVICE} exists — rolling out new task definition"
-            aws ecs update-service \
-              --cluster "${CLUSTER}" \
-              --service "${SERVICE}" \
-              --task-definition "${{ steps.register.outputs.td_arn }}" \
-              --force-new-deployment \
-              > /dev/null
-          else
-            echo "Service ${SERVICE} does not exist — creating"
-            aws ecs create-service \
-              --cluster "${CLUSTER}" \
-              --service-name "${SERVICE}" \
-              --task-definition "${{ steps.register.outputs.td_arn }}" \
-              --desired-count 2 \
-              --launch-type FARGATE \
-              --platform-version LATEST \
-              --network-configuration "awsvpcConfiguration={subnets=[${{ steps.lookup.outputs.subnet_ids }}],securityGroups=[${{ steps.lookup.outputs.sg_id }}],assignPublicIp=ENABLED}" \
-              --load-balancers "targetGroupArn=${{ steps.lookup.outputs.tg_arn }},containerName=${CONTAINER},containerPort=8080" \
-              --health-check-grace-period-seconds 60 \
-              --deployment-configuration "maximumPercent=200,minimumHealthyPercent=100" \
-              > /dev/null
-          fi
+            --service "${SERVICE}" \
+            --task-definition "${{ steps.register.outputs.td_arn }}" \
+            --force-new-deployment \
+            > /dev/null
+          echo "Rolled ${SERVICE} onto ${{ steps.register.outputs.td_arn }}"
 
       - name: Wait for service to stabilize
         run: |

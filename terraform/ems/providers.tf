@@ -10,11 +10,6 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
-    # Used by teardown.tf's destroy-time provisioner to drain the ECS service.
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.2"
-    }
   }
 
   # Backend uses workspace_key_prefix so dev and prod live at separate keys:
@@ -26,6 +21,10 @@ terraform {
   #   terraform workspace new dev   # first time only
   #   terraform workspace select dev
   #   terraform apply -var-file=envs/dev.tfvars
+  #
+  # Teardown is a single command — the ECS service is a Terraform resource
+  # (service.tf), so destroy is graph-ordered with no manual pre-steps:
+  #   terraform destroy -var-file=envs/dev.tfvars
   #
   # Pre-flight (one-time, manual): create the shared state bucket + lock table.
   # The same bucket also holds terraform/spinnaker state under a different key.

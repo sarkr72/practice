@@ -23,7 +23,7 @@ resource "aws_ec2_tag" "spinnaker_subnet_purpose" {
 
   resource_id = each.value
   key         = "immutable_metadata"
-  value       = jsonencode({
+  value = jsonencode({
     purpose = "ecs-tasks-${var.env}"
     target  = "ec2"
   })

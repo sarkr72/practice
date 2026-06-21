@@ -64,3 +64,37 @@ variable "create_read_replica" {
   type        = bool
   default     = false
 }
+
+# ---------------------------------------------------------------------------
+# ECS service
+# ---------------------------------------------------------------------------
+
+variable "desired_count" {
+  description = "Number of Fargate tasks the service runs. Terraform sets this at create time, then ignores it (CI/CD and autoscaling own it afterward via ignore_changes)."
+  type        = number
+  default     = 2
+}
+
+variable "task_cpu" {
+  description = "Fargate CPU units for the bootstrap task definition (256/512/1024/...). The deploy workflow registers the real task def, which may differ."
+  type        = string
+  default     = "512"
+}
+
+variable "task_memory" {
+  description = "Fargate memory (MiB) for the bootstrap task definition."
+  type        = string
+  default     = "1024"
+}
+
+variable "container_port" {
+  description = "Port the app listens on. Must match the task definition and the ALB target group port (8080)."
+  type        = number
+  default     = 8080
+}
+
+variable "bootstrap_image" {
+  description = "Placeholder image used ONLY for the initial Terraform-created task definition, so the service can be created on an empty ECR. The deploy workflow replaces it on first push; Terraform never reverts it (ignore_changes = [task_definition])."
+  type        = string
+  default     = "public.ecr.aws/docker/library/busybox:latest"
+}
