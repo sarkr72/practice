@@ -133,6 +133,20 @@ terraform workspace select dev
 terraform destroy -var-file=envs\dev.tfvars      # type: yes
 ```
 
+That's the whole teardown — one command, no manual pre-steps. Two things
+that used to make destroy fail are now handled automatically:
+
+- **The ECS service** (`ems-dev`) is created by the deploy workflow, not by
+  Terraform, so Terraform can't destroy it directly. A destroy-time hook in
+  `terraform/ems/teardown.tf` drains and deletes it first, which clears both
+  the `ClusterContainsServicesException` (on the cluster) and the
+  `DependencyViolation` (on the tasks security group). Requires the `aws`
+  CLI on the machine running destroy — already a prerequisite here.
+- **The ECR repo** still holds images at teardown. `ecr.tf` sets
+  `force_delete` for non-prod (`var.env != "prod"`) so destroy removes it
+  cleanly; prod keeps `force_delete = false` so a stray destroy can't wipe
+  release images (empty it by hand first if you really mean it).
+
 Order matters if Spinnaker is also running: tear down `terraform/ems`
 *before* `terraform/spinnaker`, because spinnaker references the ems
 networking via the GitHub OIDC role's IAM policy. (In practice it works

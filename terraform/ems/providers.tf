@@ -10,6 +10,11 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    # Used by teardown.tf's destroy-time provisioner to drain the ECS service.
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 
   # Backend uses workspace_key_prefix so dev and prod live at separate keys:

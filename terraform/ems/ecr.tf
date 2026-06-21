@@ -1,8 +1,13 @@
 
+# force_delete lets `terraform destroy` remove the repo even when it still
+# holds images. The deploy workflow pushes an image on every merge, so a
+# non-prod repo is essentially never empty at teardown time — without this,
+# destroy fails with RepositoryNotEmptyException. Kept false in prod so a
+# stray destroy can't wipe release images.
 resource "aws_ecr_repository" "app" {
   name                 = local.app
   image_tag_mutability = "MUTABLE"
-  force_delete         = "false"
+  force_delete         = var.env != "prod"
 
   image_scanning_configuration {
     scan_on_push = true
