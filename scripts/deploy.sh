@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 #
-# Deploy / update the platform (terraform). App deploys go through Spinnaker
-# via Jenkins → Jib → ECR → webhook → Spinnaker, NOT through this script.
+# Deploy / update the platform (terraform). App image deploys go through
+# .github/workflows/deploy.yml (push -> Jib -> ECR -> ECS update-service),
+# NOT through this script.
 #
 # Usage:
 #   ./scripts/deploy.sh <env>          # apply
-#   ./scripts/deploy.sh <env> destroy  # tear down
+#   ./scripts/deploy.sh <env> destroy  # tear down (graph-ordered, one command)
 #
 # What this script touches:
-#   ECR repo, ALB, target groups, ECS cluster, IAM roles, RDS, secrets.
+#   ECR repo, ALB, target groups, ECS cluster + service, IAM roles, RDS, secrets.
 # What this script does NOT touch:
-#   ECS services / task definitions — those are Spinnaker's job.
+#   Task-definition revisions — those belong to the deploy workflow. Terraform
+#   provides only the bootstrap revision and ignores the service's task_definition.
 
 set -euo pipefail
 

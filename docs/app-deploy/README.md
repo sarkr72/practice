@@ -21,19 +21,21 @@ git push origin main
    ▼
 .github/workflows/deploy.yml   ← GitHub Actions
    • test → Jib build → ECR push
-   • lookup VPC, subnets, SG, target group, AWS account
+   • look up AWS account id (for the task def template)
    • render ecs/taskdef.dev.json.tpl with new image
    • aws ecs register-task-definition       (new revision)
-   • aws ecs create-service (first push) OR update-service (rest)
+   • aws ecs update-service --force-new-deployment
    • aws ecs wait services-stable
    │
    ▼
 ECS Fargate   rolling deploy, ALB serves the new version
 ```
 
-Idempotent: works on the **first push** (creates the service) and **every
-push after** (updates it). Each push gets a fresh OIDC credential from
-AWS — no static keys stored in GitHub.
+The service itself is created and owned by Terraform (`terraform/ems/
+service.tf`); this workflow only rolls a new task-def revision onto it.
+Terraform ignores the service's `task_definition`, so the rollout sticks and is
+never reverted. Each push gets a fresh OIDC credential from AWS — no static keys
+stored in GitHub.
 
 ---
 
@@ -54,17 +56,17 @@ The whole workflow, ~12 steps, all in one file. Breaking it down by section:
   don't cancel in-flight rollouts (default behavior; ECS handles overlap
   via its deployment controller anyway).
 
-#### Top-level env vars (lines 32–38)
+#### Top-level env vars
 Knobs you can change to point this workflow at a different cluster:
 ```yaml
-CLUSTER:      ems-dev
-SERVICE:      ems-dev
-CONTAINER:    ems
-TARGET_GROUP: ems-dev-stable
-SG_NAME:      ems-dev-tasks
-ECR_REPO:     ems
+CLUSTER:   ems-dev
+SERVICE:   ems-dev
+CONTAINER: ems
+ECR_REPO:  ems
 ```
-Change any of these and the workflow re-targets without touching shell
+(`TARGET_GROUP` and `SG_NAME` are gone — that networking moved onto the
+Terraform-owned service.) Change any of these and the workflow re-targets
+without touching shell
 code below.
 
 #### Step 1: Checkout (line 47)
@@ -103,17 +105,12 @@ compiled classes and dependency jars, pushes to ECR. Two tags: the
 commit SHA (for traceability) and `latest`. No Docker daemon on the
 runner needed.
 
-#### Step 7: Discover networking (lines 81–101)
-Looks up at deploy time:
-- The default VPC ID (via `aws ec2 describe-vpcs --filters isDefault`).
-- The SG ID by name (`ems-dev-tasks`).
-- Subnet IDs in EKS+ECS-supported AZs (excludes `us-east-1e`).
-- The ALB target group ARN by name (`ems-dev-stable`).
-- The AWS account ID (via `aws sts get-caller-identity`).
-
-These get written to `$GITHUB_OUTPUT` for downstream steps. Doing this
-fresh on every deploy means no IDs hardcoded in the repo, and ID changes
-on a fresh `terraform apply` just work.
+#### Step 7: Discover AWS account
+Looks up only the AWS account ID (via `aws sts get-caller-identity`), written
+to `$GITHUB_OUTPUT` for the task-def render step. The VPC / subnets / security
+group / target group lookups are gone — that wiring now lives on the
+Terraform-owned service (`terraform/ems/service.tf`), so the deploy workflow no
+longer touches networking at all.
 
 #### Step 8: Render task definition (lines 103–110)
 Reads `ecs/taskdef.dev.json.tpl`, replaces `__ACCOUNT__` with the looked-up
@@ -125,19 +122,17 @@ result to `taskdef.json`. Standard `sed` substitution — no envsubst needed.
 Returns the new task definition ARN (`...:task-definition/ems-dev:N`),
 captured as `td_arn` for the next step.
 
-#### Step 10: Create or update the service (lines 121–149)
-Idempotent:
-```
-if service ACTIVE → update-service --force-new-deployment
-else              → create-service with networking + ALB + grace period
-```
-- `--force-new-deployment` makes ECS roll the service even if the only
-  change is the task def revision. (Without it, an update without other
-  field changes is a no-op.)
-- `create-service` includes everything once: launch type, network config,
-  load balancer mapping, **60s health check grace period** (so ECS doesn't
-  kill the task while Spring Boot is starting), and deployment config
-  (`maxPercent=200, minHealthyPercent=100` for rolling deploy).
+#### Step 10: Roll out the new task definition
+One command — `aws ecs update-service --force-new-deployment` — pointing the
+Terraform-owned service at the freshly registered task-def revision.
+- `--force-new-deployment` makes ECS roll the service even if the only change
+  is the task def revision. (Without it, an update with no other field change
+  is a no-op.)
+- There's no `create-service` branch any more: the service always exists,
+  because Terraform created it. Everything that used to be passed to
+  `create-service` (launch type, network config, ALB mapping, 60s health-check
+  grace period, `maxPercent=200 / minHealthyPercent=100`) now lives in
+  `terraform/ems/service.tf` and is owned there.
 
 #### Step 11: Wait for stable (lines 151–155)
 `aws ecs wait services-stable` blocks until the rollout completes. Polls
@@ -249,14 +244,14 @@ the tag, it works — but it's still not the path your real users hit.
    Why: tests must pass before image; Jib means no Docker daemon needed.
 
 5. AWS CLI (running on the runner, as github-actions-ems):
-   - aws ec2/elbv2 describe-* → look up VPC, subnets, SG, target group.
+   - aws sts get-caller-identity → AWS account id (for the task def template).
    - sed-substitute ecs/taskdef.dev.json.tpl with account + image URI.
    - aws ecs register-task-definition → new revision (ems-dev:N).
-   - aws ecs describe-services → does ems-dev exist?
-     - if no → aws ecs create-service with full networking + ALB binding
-     - if yes → aws ecs update-service --force-new-deployment
+   - aws ecs update-service --force-new-deployment → point the
+     Terraform-owned ems-dev service at the new revision.
    - aws ecs wait services-stable → block until rollout passes ALB health.
-   Why: ECS does the actual rolling deploy; the runner just orchestrates.
+   Why: Terraform owns the service's shape; the runner just swaps in the new
+   task def and ECS does the actual rolling deploy.
 
 6. ECS (in AWS, autonomous):
    - reads the new task definition.

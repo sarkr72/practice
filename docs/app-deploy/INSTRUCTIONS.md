@@ -180,10 +180,11 @@ Next `git push origin main`:
 
 ## Phase 6 — Tear down / pause the running app
 
-This workflow doesn't own any persistent AWS resources of its own — it just
-creates an ECS *service* (`ems-dev`) and *task definition revisions* inside
-the cluster owned by `terraform/ems` (`docs/app-infra`). So the right
-"teardown" depends on how cold you want to go:
+This workflow doesn't own any persistent AWS resources of its own — it only
+registers *task-definition revisions* and rolls them onto the `ems-dev`
+service. The service itself (and the cluster, ALB, RDS, ECR) is owned by
+`terraform/ems` (`docs/app-infra`). So the right "teardown" depends on how cold
+you want to go:
 
 ### Pause without losing anything (cheapest while keeping infra)
 
@@ -195,23 +196,22 @@ aws ecs update-service --cluster ems-dev --service ems-dev --desired-count 0
 ```
 
 Bill drops by the Fargate task cost (~$1/day). ALB + RDS keep ticking.
-Set `--desired-count 2` to resume — no rebuild, no redeploy needed.
+Set `--desired-count 2` to resume — no rebuild, no redeploy needed. This is
+safe even though the service is Terraform-managed: `service.tf` has
+`ignore_changes = [desired_count]`, so Terraform won't fight you or reset the
+count on the next apply.
 
-### Delete just the service (keep the cluster ready for redeploy)
+### Don't `aws ecs delete-service` by hand
 
-```powershell
-aws ecs update-service --cluster ems-dev --service ems-dev --desired-count 0
-aws ecs delete-service --cluster ems-dev --service ems-dev
-```
-
-The cluster, ALB, target groups, RDS, and ECR stay. Next `git push origin
-main` will re-create the service from scratch (the workflow's `describe-services`
-branch handles "service missing").
+The service is now a Terraform resource. Deleting it out-of-band makes
+Terraform state drift (the next `plan` wants to recreate it) and breaks the
+next deploy's `update-service`. To remove the service, destroy the infra layer
+below — Terraform takes the service down in graph order as part of it.
 
 ### Full teardown
 
-There is no `terraform destroy` for this folder — destroy `app-infra` and
-the service vanishes with the cluster. See
+`terraform destroy` on `app-infra` removes the service cleanly (tasks drained,
+ENIs detached, then cluster) along with the rest of the platform. See
 `docs/app-infra/INSTRUCTIONS.md` Phase 5.
 
 > Task definition revisions left behind by past deploys go INACTIVE after a
@@ -227,7 +227,7 @@ the service vanishes with the cluster. See
 3. *(here)* Phase 1 — set `AWS_ROLE_ARN` and `AWS_REGION` GitHub Variables.
 4. *(here)* Phase 2 — push to `main`.
 
-First push creates the service; subsequent pushes update it.
+Terraform creates the service; each push rolls a new task def onto it.
 
 ---
 

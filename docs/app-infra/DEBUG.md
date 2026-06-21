@@ -117,11 +117,14 @@ issue, etc.).
 
 ## Phase 3 — Verification
 
-### `aws ecs list-services --cluster ems-dev` returns `serviceArns: []`
-**Why:** Correct behavior. The cluster is empty by design. The deploy
-workflow creates the service on first push.
+### `aws ecs list-services --cluster ems-dev` — what to expect
+**Why:** After `terraform apply`, the cluster already has the `ems-dev` service
+— Terraform creates it from `service.tf`. Its tasks run the bootstrap
+placeholder image and sit UNHEALTHY behind the ALB until the first deploy.
+That's expected, not a failure.
 
-**Fix:** none needed — this is the expected state of app-infra alone.
+**Fix:** none needed. The first `git push` to `main` rolls the real image on
+and the tasks go healthy.
 
 ---
 
