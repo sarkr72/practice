@@ -50,7 +50,9 @@ terraform workspace select dev
 terraform apply -var-file=envs\dev.tfvars        # review the plan, type: yes
 ```
 
-Wait ~5–10 min (RDS takes the longest). At the end you'll see the outputs:
+Wait ~5–10 min (RDS takes the longest). This applies only the **platform
+layer**; apply `terraform/ems-app` next to create the ECS service (see
+`terraform/README.md`). At the end you'll see the outputs:
 
 ```powershell
 terraform output             # full list
@@ -185,8 +187,9 @@ either way — terraform just may take longer to settle dependencies.)
 ## Quick "redo from scratch" checklist
 
 1. *(If first time)* Phase 1 — S3 + DynamoDB.
-2. Phase 2 — `terraform apply -var-file=envs/dev.tfvars`.
+2. Phase 2 — `terraform apply -var-file=envs/dev.tfvars` in `terraform/ems` (platform).
 3. Phase 3 — verify ALB / RDS / ECR.
-4. Continue to `docs/app-deploy/INSTRUCTIONS.md` to put a running app on top.
+4. App layer — `cd ../ems-app && terraform apply -var-file=envs/dev.tfvars` (creates the service).
+5. Continue to `docs/app-deploy/INSTRUCTIONS.md` to push the real image.
 
-That's the whole platform layer. The deploy is in the next folder.
+Platform is this folder; the service is the `ems-app` layer; the image is the deploy workflow.

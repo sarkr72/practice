@@ -22,9 +22,11 @@ terraform {
   #   terraform workspace select dev
   #   terraform apply -var-file=envs/dev.tfvars
   #
-  # Teardown is a single command — the ECS service is a Terraform resource
-  # (service.tf), so destroy is graph-ordered with no manual pre-steps:
-  #   terraform destroy -var-file=envs/dev.tfvars
+  # Teardown order: destroy the app layer (../ems-app) FIRST, then this layer:
+  #   cd ../ems-app && terraform destroy -var-file=envs/dev.tfvars
+  #   cd ../ems     && terraform destroy -var-file=envs/dev.tfvars
+  # (or ./scripts/deploy.sh dev destroy). The app layer holds the ECS service,
+  # which must drain before this layer's cluster/SGs can go.
   #
   # Pre-flight (one-time, manual): create the shared state bucket + lock table.
   # The same bucket also holds terraform/spinnaker state under a different key.

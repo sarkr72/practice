@@ -1,7 +1,7 @@
-# Outputs are the contract between the Terraform-managed platform and its
-# consumers. After `terraform apply`, the deploy workflow targets `ecs_cluster`
-# + `ecs_service`; the optional Spinnaker pipeline reads the target group / SG /
-# subnet / role names below.
+# Outputs are the contract between this platform layer and its consumers. The
+# app layer (terraform/ems-app) reads ecs_cluster_arn, the stable target group,
+# tasks SG, subnets, IAM role ARNs and log group via terraform_remote_state to
+# build the ECS service. The optional Spinnaker pipeline reads the names below.
 
 output "alb_url" {
   description = "Public URL of the load balancer."

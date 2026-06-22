@@ -36,8 +36,12 @@ terraform apply -var-file=envs/dev.tfvars
 # 2. Drop the service + bootstrap task def from the platform state. They are
 #    gone from this layer's config now, so this just forgets them (does NOT
 #    delete anything in AWS).
-terraform state rm aws_ecs_service.app
-terraform state rm aws_ecs_task_definition.bootstrap
+#    NOTE: if the service was never managed by terraform/ems (e.g. it was still
+#    created out-of-band by the deploy workflow), these aren't in the state and
+#    the commands print "no instances found" — harmless; the `|| true` keeps
+#    going. Skip straight to step 3 in that case.
+terraform state rm aws_ecs_service.app || true
+terraform state rm aws_ecs_task_definition.bootstrap || true
 
 # 3. Adopt the running service into the app layer.
 cd ../ems-app

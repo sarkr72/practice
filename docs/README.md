@@ -48,9 +48,10 @@ Run these in order, top to bottom:
 | 1 | `spinnaker-infra/INSTRUCTIONS.md` Phase 1 | One-time: create the S3 state bucket + DynamoDB lock table. | — |
 | 2 | `spinnaker-infra/INSTRUCTIONS.md` Phase 2 | `terraform apply` — creates EKS, IAM, and the GitHub OIDC role. | `github_actions_role_arn` output |
 | 3 | `spinnaker-infra/INSTRUCTIONS.md` Phase 3 | Install the Spinnaker control plane. **Skip if you don't want the Spinnaker UI** — Phase 2 alone is enough for the app deploy to work. | Deck/Gate NLB hostnames |
-| 4 | `app-infra/INSTRUCTIONS.md` Phase 2 | `terraform apply -var-file=envs/dev.tfvars` — ALB, ECS cluster, RDS, ECR, secrets, subnet tags. | role/SG/TG names, ECR URI |
-| 5 | `app-deploy/INSTRUCTIONS.md` Phase 1 | Set `AWS_ROLE_ARN` + `AWS_REGION` as GitHub repo variables. | — |
-| 6 | `app-deploy/INSTRUCTIONS.md` Phase 2 | `git push origin main` — first deploy. | Live app on the ALB URL |
+| 4 | `app-infra/INSTRUCTIONS.md` Phase 2 | Platform layer: `terraform apply -var-file=envs/dev.tfvars` in `terraform/ems` — ALB, ECS cluster, RDS, ECR, secrets, subnet tags. | role/SG/TG names, ECR URI |
+| 5 | `terraform/README.md` | App layer: `terraform apply -var-file=envs/dev.tfvars` in `terraform/ems-app` — creates the ECS service the deploy targets. | service `ems-dev` exists |
+| 6 | `app-deploy/INSTRUCTIONS.md` Phase 1 | Set `AWS_ROLE_ARN` + `AWS_REGION` as GitHub repo variables. | — |
+| 7 | `app-deploy/INSTRUCTIONS.md` Phase 2 | `git push origin main` — first deploy. | Live app on the ALB URL |
 
 ---
 
@@ -64,6 +65,7 @@ Run these in order, top to bottom:
 | Change DB sizing or env-specific values | `app-infra/INSTRUCTIONS.md` + `terraform/ems/envs/*.tfvars` |
 | Spinnaker UI won't load or pods aren't healthy | `spinnaker-infra/DEBUG.md` |
 | Just pause the running app (cheap, fast resume) | `app-deploy/INSTRUCTIONS.md` Phase 6 → "Pause without losing anything" |
+| Tear down everything, or just the app (keep the DB) | `terraform/README.md` → Commands |
 | Tear it all down for the night | `spinnaker-infra/INSTRUCTIONS.md` → "Tearing it all down" + `app-infra/INSTRUCTIONS.md` Phase 5 |
 | Understand how `git push` becomes a running container | `app-deploy/README.md` → "Workflow architecture" |
 | Understand who can assume which IAM role | `app-deploy/README.md` → "Trust chain summary" |

@@ -5,8 +5,9 @@ Wire up GitHub Actions so a push to `main` deploys your app to ECS Fargate.
 > Prerequisites:
 > 1. `docs/spinnaker-infra/INSTRUCTIONS.md` Phase 1–2 (creates the
 >    `github-actions-ems` IAM role).
-> 2. `docs/app-infra/INSTRUCTIONS.md` Phase 2 (creates the ECS cluster, ALB,
->    RDS, ECR, IAM, secrets the workflow targets).
+> 2. `docs/app-infra/INSTRUCTIONS.md` Phase 2 (platform: ECS cluster, ALB,
+>    RDS, ECR, IAM, secrets), then apply the `terraform/ems-app` layer — it
+>    creates the ECS service the workflow rolls task defs onto.
 
 ---
 
